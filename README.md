@@ -1,6 +1,6 @@
 # Discord Bot
 
-Este projeto é um bot simples para Discord que escuta mensagens em um canal específico e responde a comandos de moderadores. O bot possui dois comandos principais: `add` e `remove`, que permitem gerenciar uma lista de mensagens ou usuários.
+Este projeto é um bot simples para Discord que escuta mensagens em um canal específico e responde com marcações. O bot possui 3 comandos: `add`, `remove` e `list`, que permitem gerenciar uma lista de triggers.
 
 ## Estrutura do Projeto
 
@@ -8,13 +8,11 @@ Este projeto é um bot simples para Discord que escuta mensagens em um canal esp
 discord-bot
 ├── src
 │   ├── bot.py           # Ponto de entrada do bot
-│   ├── commands
-│   │   ├── add.py       # Implementação do comando add
-│   │   └── remove.py    # Implementação do comando remove
-│   └── utils
-│       └── permissions.py # Funções utilitárias para verificar permissões
-├── requirements.txt      # Dependências do projeto
-└── README.md             # Documentação do projeto
+│   └── database
+│       └── db.py       # Banco de dados SQLite para armazenar regras
+├── .env                # Variáveis de ambiente
+├── main.py             # Inicialização do bot
+└── pyproject.toml      # Configurações do projeto
 ```
 
 ## Instalação
@@ -27,22 +25,27 @@ discord-bot
 
 2. Instale as dependências:
    ```
+   uv sync
+   ```
+   caso não tenha astral-uv instalado:
+   ```
    pip install -r requirements.txt
    ```
 
 ## Uso
 
-1. Configure seu token do bot no arquivo `bot.py`.
+1. Configure seu token do bot no arquivo `.env` (renomei .`env-example` se necessário).
 2. Execute o bot:
    ```
-   python src/bot.py
+   uv run python main.py
+   ```
+   caso não tenha astral-uv instalado:
+   ```
+   python main.py
    ```
 
 ## Comandos
 
-- `!add <mensagem>`: Adiciona uma mensagem ou usuário à lista. Apenas moderadores podem usar este comando.
-- `!remove <mensagem>`: Remove uma mensagem ou usuário da lista. Apenas moderadores podem usar este comando.
-
-## Contribuição
-
-Sinta-se à vontade para contribuir com melhorias ou correções. Crie um fork do repositório, faça suas alterações e envie um pull request.
+- `/add <canal> <regex> <cargo>`: Adiciona um observador para um canal específico. O comando aceita o ID do canal, uma expressão regular e o ID do cargo a ser mencionado quando a mensagem corresponder à regex.
+- `/remove <id>`: Remove uma observador existente pelo ID.
+- `/list`: Lista todos os observadores configurados no servidor.
