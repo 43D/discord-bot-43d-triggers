@@ -34,7 +34,7 @@ discord-bot
 
 ## Uso
 
-1. Configure seu token do bot no arquivo `.env` (renomei .`env-example` se necessário).
+1. Configure seu token do bot no arquivo `.env` (renomei `.env-example` se necessário).
 2. Execute o bot:
    ```
    uv run python main.py
