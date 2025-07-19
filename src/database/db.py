@@ -7,6 +7,7 @@ class RegrasDB:
         self.init_db()
 
     def init_db(self):
+        # Tabela de regras
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS regras (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -14,6 +15,47 @@ class RegrasDB:
                 canal_id INTEGER,
                 regex TEXT,
                 cargo_id INTEGER
+            )
+        """)
+        # Tabela de links
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fatos_checks_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER,
+                link TEXT,
+                tipo TEXT
+            )
+        """)
+        # Tabela de usuários
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fatos_checks_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                guild_id INTEGER,
+                nome TEXT,
+                taxa REAL,
+                checking REAL,
+                deny INTEGER
+            )
+        """)
+        # Tabela de canais
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fatos_checks_channel (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_channel INTEGER,
+                id_guild INTEGER,
+                allow INTEGER
+            )
+        """)
+        # Tabela de configs
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fatos_checks_configs (
+                guild_id INTEGER PRIMARY KEY,
+                enable_fatos INTEGER,
+                random_user_enable INTEGER,
+                random_taxa REAL,
+                all_channel_enable INTEGER,
+                enable_security INTEGER
             )
         """)
         self.conn.commit()
@@ -39,5 +81,120 @@ class RegrasDB:
         )
         self.conn.commit()
 
+    def get_config_by_guild(self, guild_id):
+        self.cursor.execute(
+            "SELECT * FROM fatos_checks_configs WHERE guild_id = ?", (guild_id,)
+        )
+        return self.cursor.fetchone()
+
+    def add_config(self, guild_id, enable_fatos, random_user_enable, random_taxa, all_channel_enable, enable_security):
+        self.cursor.execute(
+            "INSERT INTO fatos_checks_configs (guild_id, enable_fatos, random_user_enable, random_taxa, all_channel_enable, enable_security) VALUES (?, ?, ?, ?, ?, ?)",
+            (guild_id, int(enable_fatos), int(random_user_enable), float(random_taxa), int(all_channel_enable), int(enable_security))
+        )
+        self.conn.commit()
+        
+    def update_config(self, guild_id, enable_fatos, random_user_enable, random_taxa, all_channel_enable, enable_security):
+        # Atualiza se já existe, senão insere
+        self.cursor.execute("""
+            SELECT guild_id FROM fatos_checks_configs WHERE guild_id = ?
+        """, (guild_id, ))
+        if self.cursor.fetchone():
+            self.cursor.execute("""
+                UPDATE fatos_checks_configs
+                SET enable_fatos = ?, random_user_enable = ?, random_taxa = ?, all_channel_enable = ?, enable_security = ?
+                WHERE guild_id = ?
+            """, (int(enable_fatos), int(random_user_enable), float(random_taxa), int(all_channel_enable), int(enable_security), guild_id))
+        else:
+            self.cursor.execute("""
+                INSERT INTO fatos_checks_configs (guild_id, enable_fatos, random_user_enable, random_taxa, all_channel_enable, enable_security)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (guild_id, int(enable_fatos), int(random_user_enable), float(random_taxa), int(all_channel_enable), int(enable_security)))
+        self.conn.commit()
+
+    def set_user_config(self, user_id, guild_id, nome, taxa, checking, deny):
+        # Atualiza se já existe, senão insere
+        self.cursor.execute("""
+            SELECT id FROM fatos_checks_users WHERE user_id = ? AND guild_id = ?
+        """, (user_id, guild_id))
+        if self.cursor.fetchone():
+            self.cursor.execute("""
+                UPDATE fatos_checks_users
+                SET nome = ?, taxa = ?, checking = ?, deny = ?
+                WHERE user_id = ? AND guild_id = ?
+            """, (nome, taxa, checking, deny, user_id, guild_id))
+        else:
+            self.cursor.execute("""
+                INSERT INTO fatos_checks_users (user_id, guild_id, nome, taxa, checking, deny)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, guild_id, nome, taxa, checking, deny))
+        self.conn.commit()
+
+    def get_users_by_guild(self, guild_id):
+        self.cursor.execute("""
+            SELECT * FROM fatos_checks_users WHERE guild_id = ?
+        """, (guild_id,))
+        return self.cursor.fetchall()
+
+    def remove_user_config(self, user_id, guild_id):
+        self.cursor.execute("""
+            DELETE FROM fatos_checks_users WHERE user_id = ? AND guild_id = ?
+        """, (user_id, guild_id))
+        self.conn.commit()
+    
+    def set_channel_config(self, id_channel, id_guild, allow):
+        self.cursor.execute("""
+            SELECT id FROM fatos_checks_channel WHERE id_channel = ? AND id_guild = ?
+        """, (id_channel, id_guild))
+        if self.cursor.fetchone():
+            self.cursor.execute("""
+                UPDATE fatos_checks_channel
+                SET allow = ?
+                WHERE id_channel = ? AND id_guild = ?
+            """, (int(allow), id_channel, id_guild))
+        else:
+            self.cursor.execute("""
+                INSERT INTO fatos_checks_channel (id_channel, id_guild, allow)
+                VALUES (?, ?, ?)
+            """, (id_channel, id_guild, int(allow)))
+        self.conn.commit()
+
+    def get_channels_by_guild(self, id_guild):
+        self.cursor.execute("""
+            SELECT id_channel, allow FROM fatos_checks_channel WHERE id_guild = ?
+        """, (id_guild,))
+        return self.cursor.fetchall()
+
+    def remove_channel_config(self, id_channel, id_guild):
+        self.cursor.execute("""
+            DELETE FROM fatos_checks_channel WHERE id_channel = ? AND id_guild = ?
+        """, (id_channel, id_guild))
+        self.conn.commit()
+    
+    def set_url_config(self, id_guild, url, tipo):
+        self.cursor.execute("""
+            INSERT INTO fatos_checks_links (guild_id, link, tipo)
+            VALUES (?, ?, ?)
+        """, (id_guild, url, tipo,))
+        self.conn.commit()
+ 
+    def get_url_by_guild(self, guild_id):
+        self.cursor.execute("""
+            SELECT * FROM fatos_checks_links WHERE guild_id = ?
+        """, (guild_id,))
+        return self.cursor.fetchall()
+    
+    def remove_url_config(self, id_guild, id):
+        self.cursor.execute("""
+            DELETE FROM fatos_checks_links WHERE guild_id = ? AND id = ?
+        """, (id_guild, id))
+        self.conn.commit()
+        
+    def check_url_exists(self, guild_id, url, tipo):
+        self.cursor.execute("""
+            SELECT * FROM fatos_checks_links WHERE guild_id = ? AND link = ? AND tipo = ?
+        """, (guild_id, url, tipo, ))
+        return self.cursor.fetchone() is not None
+    
     def close(self):
         self.conn.close()
