@@ -19,7 +19,7 @@ discord-bot
 
 1. Clone o repositório:
    ```
-   git clone <URL_DO_REPOSITORIO>
+   git clone https://github.com/43D/discord-bot-43d-triggers.git
    cd discord-bot
    ```
 
