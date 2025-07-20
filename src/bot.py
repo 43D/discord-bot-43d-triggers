@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from src.database.db import RegrasDB
-from src.mapa import mapa_links_padrao
+from src.mapas.mapa import mapa_links_padrao
 
 db = RegrasDB()
 intents = discord.Intents.default()
