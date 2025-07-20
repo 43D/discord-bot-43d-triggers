@@ -5,13 +5,17 @@ from discord import app_commands
 from discord.ext import commands
 from src.database.db import RegrasDB
 from src.mapas.mapa import mapa_links_padrao
+from src.util.ProcessMensage import ProcessMensage
 
 db = RegrasDB()
+processMsg = ProcessMensage(db)
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 data_list = []
+
+
 
 @bot.event
 async def on_ready():
@@ -38,14 +42,17 @@ async def on_guild_join(guild: discord.Guild):
     
 @bot.event
 async def on_message(message: discord.Message):
+    skip = False
     guild = message.guild
     regras = db.get_regras_by_guild(guild.id if guild else 0)
     for _, canal_id, regex, cargo_id in regras:
         if message.channel.id == canal_id:
             if re.search(regex, message.content) or regex.upper() in message.content.upper():
                 cargo_mention = f"<@&{cargo_id}>"
+                skip = True
                 await message.channel.send(cargo_mention)
                 break  # Só marca uma vez por mensagem
+    await processMsg.process(message, skip, bot.user)
     await bot.process_commands(message)
     
 @bot.tree.command(name="add", description="Adiciona um item à lista")
