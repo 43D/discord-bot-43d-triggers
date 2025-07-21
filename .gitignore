@@ -11,3 +11,5 @@ wheels/
 .env
 *.db
 botdata.db
+main.dev.py
+amilton_db/

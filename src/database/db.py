@@ -26,6 +26,24 @@ class RegrasDB:
                 tipo TEXT
             )
         """)
+        # Tabela de configs
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER,
+                tag TEXT,
+                value TEXT
+            )
+        """)
+        # Tabela de canais
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS amilton_channel (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_channel INTEGER,
+                id_guild INTEGER,
+                allow INTEGER
+            )
+        """)
         # Tabela de usuários
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS fatos_checks_users (
@@ -195,6 +213,54 @@ class RegrasDB:
             SELECT * FROM fatos_checks_links WHERE guild_id = ? AND link = ? AND tipo = ?
         """, (guild_id, url, tipo, ))
         return self.cursor.fetchone() is not None
+ 
+    def get_configs_by_tag(self, guild_id, tag):
+        self.cursor.execute("""
+            SELECT value FROM configs WHERE guild_id = ? AND tag = ?
+        """, (guild_id, tag, ))
+        res = self.cursor.fetchone()
+        return res[0] if res else None
     
+    def set_config_by_tag(self, guild_id, tag, value):
+        existing = self.get_configs_by_tag(guild_id, tag)
+        if existing:
+            self.cursor.execute("""
+                UPDATE configs SET value = ? WHERE guild_id = ? AND tag = ?
+            """, (value, guild_id, tag))
+        else:
+            self.cursor.execute("""
+                INSERT INTO configs (guild_id, tag, value) VALUES (?, ?, ?)
+            """, (guild_id, tag, value))
+        self.conn.commit()
+ 
+    def set_amilton_channel_config(self, id_channel, id_guild, allow):
+        self.cursor.execute("""
+            SELECT id FROM amilton_channel WHERE id_channel = ? AND id_guild = ?
+        """, (id_channel, id_guild))
+        if self.cursor.fetchone():
+            self.cursor.execute("""
+                UPDATE amilton_channel
+                SET allow = ?
+                WHERE id_channel = ? AND id_guild = ?
+            """, (int(allow), id_channel, id_guild))
+        else:
+            self.cursor.execute("""
+                INSERT INTO amilton_channel (id_channel, id_guild, allow)
+                VALUES (?, ?, ?)
+            """, (id_channel, id_guild, int(allow)))
+        self.conn.commit()
+
+    def get_amilton_channels_by_guild(self, id_guild):
+        self.cursor.execute("""
+            SELECT id_channel, allow FROM amilton_channel WHERE id_guild = ?
+        """, (id_guild,))
+        return self.cursor.fetchall()
+ 
+    def remove_amilton_channels_by_guild(self, id_channel, id_guild):
+        self.cursor.execute("""
+            DELETE FROM amilton_channel WHERE id_channel = ? AND id_guild = ?
+        """, (id_channel, id_guild))
+        self.conn.commit()
+        
     def close(self):
         self.conn.close()

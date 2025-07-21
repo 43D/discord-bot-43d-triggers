@@ -1,3 +1,4 @@
+import asyncio
 import re
 import aiohttp
 import discord
@@ -6,16 +7,17 @@ from discord.ext import commands
 from src.database.db import RegrasDB
 from src.mapas.mapa import mapa_links_padrao
 from src.util.ProcessMensage import ProcessMensage
+from src.util.ProcessHistory import ProcessHistory 
 
 db = RegrasDB()
 processMsg = ProcessMensage(db)
+processar_historico = ProcessHistory(db)
 intents = discord.Intents.default()
 intents.messages = True
+intents.guilds = True
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 data_list = []
-
-
 
 @bot.event
 async def on_ready():
@@ -296,3 +298,76 @@ async def list_fatos_image_url(interaction: discord.Interaction):
 async def reset_fatos_image_url_to_default(interaction: discord.Interaction):
     [db.set_url_config(interaction.guild_id, m["link"], m["tipo"]) for m in mapa_links_padrao]
     await interaction.response.send_message("Resetado!", ephemeral=True)
+
+@bot.tree.command(name="set_amilton_configs", description="Configure essa copia de amilton")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(enable="Ativar amilton 2", rate="Taxa de drop do amilton (0-100)", tipo="Modus operandi do amilton")
+@app_commands.choices(enable=[
+    app_commands.Choice(name="Ativado", value=1),
+    app_commands.Choice(name="Desativado", value=2)
+])
+@app_commands.choices(tipo=[
+    app_commands.Choice(name="Todos", value="ALL"),
+    app_commands.Choice(name="Lista Branca", value="WHITE"),
+    app_commands.Choice(name="Lista negra", value="DENY")
+])
+async def set_amilton_configs(interaction: discord.Interaction, enable: app_commands.Choice[int], rate: float, tipo: app_commands.Choice[str]):
+    guild_id = str(interaction.guild_id)
+    enable_value = enable.value
+    tipo_value = tipo.value
+    if rate < 0 or rate > 100:
+        await interaction.response.send_message("A taxa de drop deve ser entre 0.0 e 100.", ephemeral=True)
+        return
+    
+    db.set_config_by_tag(guild_id=guild_id, tag="amilton_enable", value=enable_value)
+    db.set_config_by_tag(guild_id=guild_id, tag="amilton_mode", value=tipo_value)
+    db.set_config_by_tag(guild_id=guild_id, tag="amilton_rate", value=rate)
+
+    
+    if enable_value == 1:
+        asyncio.create_task(processar_historico.processar_historico(interaction.guild))
+    
+    await interaction.response.send_message("Configurações atualizadas com sucesso!", ephemeral=False)
+
+@bot.tree.command(name="set_amilton_channel", description="Configure os canais para amilton")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(canal="Canal a ser adicionado ou atualizado", lista="Coloque na lista branca ou negra")
+@app_commands.choices(lista=[
+    app_commands.Choice(name="Lista Branca", value=0),
+    app_commands.Choice(name="Lista Negra", value=1)
+])
+async def set_amilton_channel(interaction: discord.Interaction, canal: discord.TextChannel, lista: app_commands.Choice[int]):
+    lista_value = lista.value
+    db.set_amilton_channel_config(id_channel=canal.id, id_guild=interaction.guild_id, allow=lista_value)
+    if db.get_configs_by_tag(interaction.guild_id, "amilton_enable") == 1:
+        asyncio.create_task(processar_historico.processar_historico(interaction.guild))
+    await interaction.response.send_message(f"Canal {canal.mention} configurado.")
+
+@bot.tree.command(name="list_amilton_channel", description="Lista os canais configurados para amilton")
+@app_commands.checks.has_permissions(administrator=True)
+async def list_amilton_channel(interaction: discord.Interaction):
+    canais = db.get_amilton_channels_by_guild(interaction.guild_id)
+    if not canais:
+        await interaction.response.send_message("Nenhum canal configurado para fatos_check.", ephemeral=True)
+        return
+    lista_negra = []
+    lista_branca = []
+    for id_channel, allow in canais:
+        canal_mention = f"<#{id_channel}>"
+        lista_negra.append(canal_mention) if allow else lista_branca.append(canal_mention)
+        
+    embed = discord.Embed(title="Canais configurados para Amilton", color=discord.Color.yellow())
+    embed.add_field(name="Lista Negra (ignora quando modo DENY ativado)", value="\n" if lista_negra else "Nenhum canal negado.", inline=False)
+    [embed.add_field(name="", value=ati, inline=False) for ati in lista_negra]
+    embed.add_field(name="Lista Branca (Durante o modo WHITE, somente esses canais seram usados)", value="\n" if lista_branca else "Nenhum canal desativado.", inline=False)
+    [embed.add_field(name="", value=desa, inline=False) for desa in lista_branca]
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="remove_amilton_channel", description="Remove um canal da configuração do amilton")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(canal="Canal a ser removido")
+async def remove_amilton_channel(interaction: discord.Interaction, canal: discord.TextChannel):
+    db.remove_amilton_channels_by_guild(id_channel=canal.id, id_guild=interaction.guild_id)
+    await interaction.response.send_message(f"Canal {canal.mention} removido das configurações do amilton.")
+    
