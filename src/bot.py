@@ -61,11 +61,13 @@ async def on_message(message: discord.Message):
                 skip = True
                 await message.channel.send(cargo_mention)
                 break  # Só marca uma vez por mensagem
-    await processMsg.process(message, skip, bot.user)
-    
+            
+    is_mentioned = bot.user in message.mentions if bot.user else False
     bot_user_id = bot.user.id if bot.user else 0
-    if enable_osaka and enable_osaka == 1 and message.author.id != bot_user_id:
-        await osakaBot.process(message)
+            
+    await processMsg.process(message, skip, bot_user_id, is_mentioned)
+    if enable_osaka and enable_osaka == "1" and message.author.id != bot_user_id:
+        await osakaBot.process(message, is_mentioned)
     await bot.process_commands(message)
     
 @bot.tree.command(name="add", description="Adiciona um item à lista")

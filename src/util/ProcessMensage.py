@@ -42,15 +42,13 @@ class ProcessMensage:
                 else:
                     await message.reply(f" --  {url}")
     
-    async def process(self, message: discord.Message, skip: bool, bot_user: discord.ClientUser | None ):
+    async def process(self, message: discord.Message, skip: bool, bot_user_id: int, is_mentioned: bool):
         if skip: return
         guild = message.guild
         guild_id = guild.id if guild else 0
-        bot_user_id = bot_user.id if bot_user else 0
         chanel_id = message.channel.id
         isBotMessage = message.author.id == bot_user_id
         if isBotMessage: return
-        is_mentioned = bot_user in message.mentions if bot_user else False
         is_reply = message.reference and message.reference.message_id
         regras = self._db.get_config_by_guild(guild_id)
         if not regras: return

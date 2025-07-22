@@ -275,9 +275,11 @@ class MessagesDB:
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
         
-    def get_all_messages(self, guild_id):
+    def get_all_messages(self, guild_id, message):
         try:
             self._start_db(guild_id)
+            self.cursor.execute("INSERT OR IGNORE INTO mensagens (id, conteudo) VALUES (?, ?)", (message.id, message.content))
+            self.conn.commit()
             self.cursor.execute("SELECT conteudo FROM mensagens")
             messages = self.cursor.fetchall()
             self.cursor.close()

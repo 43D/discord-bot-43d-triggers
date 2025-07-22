@@ -52,6 +52,5 @@ class ProcessHistory:
             except Exception as e:
                 print(f"Erro ao processar {channel.name}: {e}")
                 
-        self._cursor.close()
         self._conn.close()
         
