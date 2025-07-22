@@ -4,14 +4,17 @@ import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
-from src.database.db import RegrasDB
+from src.database.db import RegrasDB, MessagesDB
 from src.mapas.mapa import mapa_links_padrao
 from src.util.ProcessMensage import ProcessMensage
 from src.util.ProcessHistory import ProcessHistory 
+from src.util.ProcessOsaka import ProcessOsaka
 
 db = RegrasDB()
 processMsg = ProcessMensage(db)
 processar_historico = ProcessHistory(db)
+messagesDB = MessagesDB()
+osakaBot = ProcessOsaka(messagesDB, db)
 intents = discord.Intents.default()
 intents.messages = True
 intents.guilds = True
@@ -30,6 +33,7 @@ async def on_ready():
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     config = db.get_config_by_guild(guild.id)
+    
     if not config:
         db.add_config(
             guild_id=guild.id,
@@ -41,12 +45,15 @@ async def on_guild_join(guild: discord.Guild):
         )
         [db.set_url_config(guild.id, m["link"], m["tipo"]) for m in mapa_links_padrao]
         print(f"Configuração padrão criada para guild {guild.id}")
-    
+
+        
 @bot.event
 async def on_message(message: discord.Message):
     skip = False
     guild = message.guild
     regras = db.get_regras_by_guild(guild.id if guild else 0)
+    enable_osaka = db.get_configs_by_tag(guild.id if guild else 0, "osaka_enable")
+    
     for _, canal_id, regex, cargo_id in regras:
         if message.channel.id == canal_id:
             if re.search(regex, message.content) or regex.upper() in message.content.upper():
@@ -55,6 +62,10 @@ async def on_message(message: discord.Message):
                 await message.channel.send(cargo_mention)
                 break  # Só marca uma vez por mensagem
     await processMsg.process(message, skip, bot.user)
+    
+    bot_user_id = bot.user.id if bot.user else 0
+    if enable_osaka and enable_osaka == 1 and message.author.id != bot_user_id:
+        await osakaBot.process(message)
     await bot.process_commands(message)
     
 @bot.tree.command(name="add", description="Adiciona um item à lista")
@@ -299,9 +310,9 @@ async def reset_fatos_image_url_to_default(interaction: discord.Interaction):
     [db.set_url_config(interaction.guild_id, m["link"], m["tipo"]) for m in mapa_links_padrao]
     await interaction.response.send_message("Resetado!", ephemeral=True)
 
-@bot.tree.command(name="set_amilton_configs", description="Configure essa copia de amilton")
+@bot.tree.command(name="set_osaka_configs", description="Configure essa copia de osaka")
 @app_commands.checks.has_permissions(administrator=True)
-@app_commands.describe(enable="Ativar amilton 2", rate="Taxa de drop do amilton (0-100)", tipo="Modus operandi do amilton")
+@app_commands.describe(enable="Ativar osaka 2", rate="Taxa de drop do osaka (0-100)", tipo="Modus operandi do osaka")
 @app_commands.choices(enable=[
     app_commands.Choice(name="Ativado", value=1),
     app_commands.Choice(name="Desativado", value=2)
@@ -311,7 +322,7 @@ async def reset_fatos_image_url_to_default(interaction: discord.Interaction):
     app_commands.Choice(name="Lista Branca", value="WHITE"),
     app_commands.Choice(name="Lista negra", value="DENY")
 ])
-async def set_amilton_configs(interaction: discord.Interaction, enable: app_commands.Choice[int], rate: float, tipo: app_commands.Choice[str]):
+async def set_osaka_configs(interaction: discord.Interaction, enable: app_commands.Choice[int], rate: float, tipo: app_commands.Choice[str]):
     guild_id = str(interaction.guild_id)
     enable_value = enable.value
     tipo_value = tipo.value
@@ -319,9 +330,9 @@ async def set_amilton_configs(interaction: discord.Interaction, enable: app_comm
         await interaction.response.send_message("A taxa de drop deve ser entre 0.0 e 100.", ephemeral=True)
         return
     
-    db.set_config_by_tag(guild_id=guild_id, tag="amilton_enable", value=enable_value)
-    db.set_config_by_tag(guild_id=guild_id, tag="amilton_mode", value=tipo_value)
-    db.set_config_by_tag(guild_id=guild_id, tag="amilton_rate", value=rate)
+    db.set_config_by_tag(guild_id=guild_id, tag="osaka_enable", value=enable_value)
+    db.set_config_by_tag(guild_id=guild_id, tag="osaka_mode", value=tipo_value)
+    db.set_config_by_tag(guild_id=guild_id, tag="osaka_rate", value=rate)
 
     
     if enable_value == 1:
@@ -329,24 +340,43 @@ async def set_amilton_configs(interaction: discord.Interaction, enable: app_comm
     
     await interaction.response.send_message("Configurações atualizadas com sucesso!", ephemeral=False)
 
-@bot.tree.command(name="set_amilton_channel", description="Configure os canais para amilton")
+@bot.tree.command(name="get_osaka_configs", description="Mostra as configs do osaka 2 para este servidor")
+@app_commands.checks.has_permissions(administrator=True)
+async def get_osaka_configs(interaction: discord.Interaction):
+    guild_id = str(interaction.guild_id)
+    enable = db.get_configs_by_tag(guild_id, "osaka_enable")
+    modus_op = db.get_configs_by_tag(guild_id, "osaka_mode")
+    rate = db.get_configs_by_tag(guild_id, "osaka_rate")
+    
+    if enable is None or modus_op is None or rate is None:
+        await interaction.response.send_message("Nenhuma configuração encontrada para este servidor.", ephemeral=True)
+        return
+    
+    embed = discord.Embed(title="Configurações do osaka 2", color=discord.Color.yellow())
+    embed.add_field(name="Ativado", value=str(bool(enable)), inline=False)
+    embed.add_field(name="Modo Operacional", value=modus_op, inline=False)
+    embed.add_field(name="Taxa de Drop", value=str(rate), inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="set_osaka_channel", description="Configure os canais para osaka")
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(canal="Canal a ser adicionado ou atualizado", lista="Coloque na lista branca ou negra")
 @app_commands.choices(lista=[
     app_commands.Choice(name="Lista Branca", value=0),
     app_commands.Choice(name="Lista Negra", value=1)
 ])
-async def set_amilton_channel(interaction: discord.Interaction, canal: discord.TextChannel, lista: app_commands.Choice[int]):
+async def set_osaka_channel(interaction: discord.Interaction, canal: discord.TextChannel, lista: app_commands.Choice[int]):
     lista_value = lista.value
-    db.set_amilton_channel_config(id_channel=canal.id, id_guild=interaction.guild_id, allow=lista_value)
-    if db.get_configs_by_tag(interaction.guild_id, "amilton_enable") == 1:
+    db.set_osaka_channel_config(id_channel=canal.id, id_guild=interaction.guild_id, allow=lista_value)
+    if db.get_configs_by_tag(interaction.guild_id, "osaka_enable") == 1:
         asyncio.create_task(processar_historico.processar_historico(interaction.guild))
     await interaction.response.send_message(f"Canal {canal.mention} configurado.")
 
-@bot.tree.command(name="list_amilton_channel", description="Lista os canais configurados para amilton")
+@bot.tree.command(name="list_osaka_channel", description="Lista os canais configurados para osaka")
 @app_commands.checks.has_permissions(administrator=True)
-async def list_amilton_channel(interaction: discord.Interaction):
-    canais = db.get_amilton_channels_by_guild(interaction.guild_id)
+async def list_osaka_channel(interaction: discord.Interaction):
+    canais = db.get_osaka_channels_by_guild(interaction.guild_id)
     if not canais:
         await interaction.response.send_message("Nenhum canal configurado para fatos_check.", ephemeral=True)
         return
@@ -356,7 +386,7 @@ async def list_amilton_channel(interaction: discord.Interaction):
         canal_mention = f"<#{id_channel}>"
         lista_negra.append(canal_mention) if allow else lista_branca.append(canal_mention)
         
-    embed = discord.Embed(title="Canais configurados para Amilton", color=discord.Color.yellow())
+    embed = discord.Embed(title="Canais configurados para osaka", color=discord.Color.yellow())
     embed.add_field(name="Lista Negra (ignora quando modo DENY ativado)", value="\n" if lista_negra else "Nenhum canal negado.", inline=False)
     [embed.add_field(name="", value=ati, inline=False) for ati in lista_negra]
     embed.add_field(name="Lista Branca (Durante o modo WHITE, somente esses canais seram usados)", value="\n" if lista_branca else "Nenhum canal desativado.", inline=False)
@@ -364,10 +394,10 @@ async def list_amilton_channel(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="remove_amilton_channel", description="Remove um canal da configuração do amilton")
+@bot.tree.command(name="remove_osaka_channel", description="Remove um canal da configuração do osaka")
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(canal="Canal a ser removido")
-async def remove_amilton_channel(interaction: discord.Interaction, canal: discord.TextChannel):
-    db.remove_amilton_channels_by_guild(id_channel=canal.id, id_guild=interaction.guild_id)
-    await interaction.response.send_message(f"Canal {canal.mention} removido das configurações do amilton.")
+async def remove_osaka_channel(interaction: discord.Interaction, canal: discord.TextChannel):
+    db.remove_osaka_channels_by_guild(id_channel=canal.id, id_guild=interaction.guild_id)
+    await interaction.response.send_message(f"Canal {canal.mention} removido das configurações do osaka.")
     

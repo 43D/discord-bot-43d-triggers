@@ -1,3 +1,4 @@
+import os
 import sqlite3
 
 class RegrasDB:
@@ -37,7 +38,7 @@ class RegrasDB:
         """)
         # Tabela de canais
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS amilton_channel (
+            CREATE TABLE IF NOT EXISTS osaka_channel (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 id_channel INTEGER,
                 id_guild INTEGER,
@@ -233,34 +234,55 @@ class RegrasDB:
             """, (guild_id, tag, value))
         self.conn.commit()
  
-    def set_amilton_channel_config(self, id_channel, id_guild, allow):
+    def set_osaka_channel_config(self, id_channel, id_guild, allow):
         self.cursor.execute("""
-            SELECT id FROM amilton_channel WHERE id_channel = ? AND id_guild = ?
+            SELECT id FROM osaka_channel WHERE id_channel = ? AND id_guild = ?
         """, (id_channel, id_guild))
         if self.cursor.fetchone():
             self.cursor.execute("""
-                UPDATE amilton_channel
+                UPDATE osaka_channel
                 SET allow = ?
                 WHERE id_channel = ? AND id_guild = ?
             """, (int(allow), id_channel, id_guild))
         else:
             self.cursor.execute("""
-                INSERT INTO amilton_channel (id_channel, id_guild, allow)
+                INSERT INTO osaka_channel (id_channel, id_guild, allow)
                 VALUES (?, ?, ?)
             """, (id_channel, id_guild, int(allow)))
         self.conn.commit()
 
-    def get_amilton_channels_by_guild(self, id_guild):
+    def get_osaka_channels_by_guild(self, id_guild):
         self.cursor.execute("""
-            SELECT id_channel, allow FROM amilton_channel WHERE id_guild = ?
+            SELECT id_channel, allow FROM osaka_channel WHERE id_guild = ?
         """, (id_guild,))
         return self.cursor.fetchall()
  
-    def remove_amilton_channels_by_guild(self, id_channel, id_guild):
+    def remove_osaka_channels_by_guild(self, id_channel, id_guild):
         self.cursor.execute("""
-            DELETE FROM amilton_channel WHERE id_channel = ? AND id_guild = ?
+            DELETE FROM osaka_channel WHERE id_channel = ? AND id_guild = ?
         """, (id_channel, id_guild))
         self.conn.commit()
         
     def close(self):
         self.conn.close()
+        
+class MessagesDB:
+    def _start_db(self, guild_id):
+        os.makedirs("osaka_db", exist_ok=True)
+        db_path = f"osaka_db/{guild_id}.db"
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"Database file {db_path} does not exist.")
+        self.conn = sqlite3.connect(db_path)
+        self.cursor = self.conn.cursor()
+        
+    def get_all_messages(self, guild_id):
+        try:
+            self._start_db(guild_id)
+            self.cursor.execute("SELECT conteudo FROM mensagens")
+            messages = self.cursor.fetchall()
+            self.cursor.close()
+            self.conn.close()
+            return messages
+        except Exception as e:
+            print(f"Error fetching messages: {e}")
+            return []

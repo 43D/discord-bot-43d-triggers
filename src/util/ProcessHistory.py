@@ -9,8 +9,8 @@ class ProcessHistory:
         self._db = db
         
     def _create_db(self, guild_id):
-        os.makedirs("amilton_db", exist_ok=True)
-        db_path = f"amilton_db/{guild_id}.db"
+        os.makedirs("osaka_db", exist_ok=True)
+        db_path = f"osaka_db/{guild_id}.db"
         self._conn = sqlite3.connect(db_path)
         self._cursor = self._conn.cursor()
         self._cursor.execute("""CREATE TABLE IF NOT EXISTS mensagens (
@@ -36,8 +36,8 @@ class ProcessHistory:
                     return canal[1]
             return 2
         
-        modus_op: Literal["ALL", "WHITE", "DENY"] = self._db.get_configs_by_tag(id_guild, "amilton_mode") # type: ignore
-        canais = self._db.get_amilton_channels_by_guild(id_guild)
+        modus_op: Literal["ALL", "WHITE", "DENY"] = self._db.get_configs_by_tag(id_guild, "osaka_mode") # type: ignore
+        canais = self._db.get_osaka_channels_by_guild(id_guild)
         for channel in guild.text_channels:
             try:
                 channel_status = get_channel_status(canais, channel.id)
