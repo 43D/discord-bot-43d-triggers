@@ -4,15 +4,15 @@ import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
+from src.balanceador.ProcessadorHistoricoManager import ProcessadorHistoricoManager
 from src.database.db import RegrasDB, MessagesDB
 from src.mapas.mapa import mapa_links_padrao
 from src.util.ProcessMensage import ProcessMensage
-from src.util.ProcessHistory import ProcessHistory 
 from src.util.ProcessOsaka import ProcessOsaka
 
 db = RegrasDB()
 processMsg = ProcessMensage(db)
-processar_historico = ProcessHistory(db)
+historico_manager = ProcessadorHistoricoManager(db, 3)
 messagesDB = MessagesDB()
 osakaBot = ProcessOsaka(messagesDB, db)
 intents = discord.Intents.default()
@@ -338,7 +338,7 @@ async def set_osaka_configs(interaction: discord.Interaction, enable: app_comman
 
     
     if enable_value == 1:
-        asyncio.create_task(processar_historico.processar_historico(interaction.guild))
+        await historico_manager.adicionar_guild(interaction.guild)
     
     await interaction.response.send_message("Configurações atualizadas com sucesso!", ephemeral=False)
 
@@ -372,7 +372,7 @@ async def set_osaka_channel(interaction: discord.Interaction, canal: discord.Tex
     lista_value = lista.value
     db.set_osaka_channel_config(id_channel=canal.id, id_guild=interaction.guild_id, allow=lista_value)
     if db.get_configs_by_tag(interaction.guild_id, "osaka_enable") == 1:
-        asyncio.create_task(processar_historico.processar_historico(interaction.guild))
+        await historico_manager.adicionar_guild(interaction.guild)
     await interaction.response.send_message(f"Canal {canal.mention} configurado.")
 
 @bot.tree.command(name="list_osaka_channel", description="Lista os canais configurados para osaka")

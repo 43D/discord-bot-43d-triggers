@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime
 import os
 import sqlite3
 from typing import Literal
@@ -40,8 +39,6 @@ class ProcessHistory:
     
     async def fetch_full_history(self, channel: discord.TextChannel, after_obj: discord.Object | None):
         last_id = None
-        total_calls = 0
-
         while True:
             kwargs = {
                 "limit": 1000,
@@ -65,18 +62,15 @@ class ProcessHistory:
                 self._save_msg(message.id, msg)
                 self._save_last_msg_id(channel.id, message.id)
                 last_id = message.id
-
-            total_calls += 1
-            if total_calls % 2 == 0:
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                print(f"[{now}] Pausando por 200ms após {total_calls} chamadas.")
-                await asyncio.sleep(0.2)  # 2 chamadas a cada 100ms
+            print("sleep de 100ms:", self._id_guild)  
+            await asyncio.sleep(0.4)  # 1 chamadas a cada 100ms
                 
     async def processar_historico(self, guild: discord.Guild | None):
         if not guild:
             print("Guild is None, cannot process history.")
             return
         id_guild = guild.id if guild else 0
+        self._id_guild = id_guild
         self._create_db(id_guild)
         
         def get_channel_status(canais: list[tuple[int, Literal[0, 1]]], channel_id: int) -> Literal[0, 1, 2]:
