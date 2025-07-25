@@ -1,3 +1,5 @@
+import asyncio
+from datetime import datetime
 import os
 import sqlite3
 from typing import Literal
@@ -18,11 +20,58 @@ class ProcessHistory:
             conteudo TEXT
         )""")
         self._conn.commit()
+        self._cursor.execute("""CREATE TABLE IF NOT EXISTS checkpoints (
+            channel_id TEXT PRIMARY KEY,
+            last_msg_id TEXT
+        )""")
+        self._conn.commit()
+    def _get_last_msg_id(self, channel_id: int) -> str | None:
+        self._cursor.execute("SELECT last_msg_id FROM checkpoints WHERE channel_id = ?", (str(channel_id),))
+        result = self._cursor.fetchone()
+        return result[0] if result else None
+
+    def _save_last_msg_id(self, channel_id: int, msg_id: int):
+        self._cursor.execute("INSERT OR REPLACE INTO checkpoints (channel_id, last_msg_id) VALUES (?, ?)", (str(channel_id), str(msg_id)))
+        self._conn.commit()
 
     def _save_msg(self, id, msg):
         self._cursor.execute("INSERT OR REPLACE INTO mensagens (id, conteudo) VALUES (?, ?)", (id, msg))
         self._conn.commit()
-            
+    
+    async def fetch_full_history(self, channel: discord.TextChannel, after_obj: discord.Object | None):
+        last_id = None
+        total_calls = 0
+
+        while True:
+            kwargs = {
+                "limit": 1000,
+                "oldest_first": True
+            }
+            if after_obj:
+                kwargs["after"] = after_obj
+            if last_id:
+                kwargs["after"] = discord.Object(id=last_id)
+
+            messages = [msg async for msg in channel.history(**kwargs)]
+            if not messages:
+                break
+
+            for message in messages:
+                if message.author.bot:
+                    continue
+                msg = message.content.strip()
+                if not msg or len(msg) < 1:
+                    continue
+                self._save_msg(message.id, msg)
+                self._save_last_msg_id(channel.id, message.id)
+                last_id = message.id
+
+            total_calls += 1
+            if total_calls % 2 == 0:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                print(f"[{now}] Pausando por 200ms após {total_calls} chamadas.")
+                await asyncio.sleep(0.2)  # 2 chamadas a cada 100ms
+                
     async def processar_historico(self, guild: discord.Guild | None):
         if not guild:
             print("Guild is None, cannot process history.")
@@ -42,13 +91,9 @@ class ProcessHistory:
             try:
                 channel_status = get_channel_status(canais, channel.id)
                 if (modus_op == "ALL") or (modus_op == "WHITE" and channel_status == 0) or (modus_op == "DENY" and channel_status != 1):
-                    async for message in channel.history(limit=None, oldest_first=True):
-                        if message.author.bot: continue
-                        msg = message.content.strip()
-                        if not msg or len(msg) < 1:
-                            continue
-                        id = message.id
-                        self._save_msg(id, msg)
+                    last_msg_id = self._get_last_msg_id(channel.id)
+                    after_obj = discord.Object(id=int(last_msg_id)) if last_msg_id else None
+                    await self.fetch_full_history(channel, after_obj)
             except Exception as e:
                 print(f"Erro ao processar {channel.name}: {e}")
                 
