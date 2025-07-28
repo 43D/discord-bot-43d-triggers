@@ -86,6 +86,7 @@ class ProcessOsaka:
     
     async def process(self, message: discord.Message, is_mentioned: bool):
         print("osakaBot processando mensagem...")
+        if message.reference: return
         guild_id = message.guild.id if message.guild else 0
         channel_id = message.channel.id
         if not self._rng_msg(guild_id, channel_id, is_mentioned):

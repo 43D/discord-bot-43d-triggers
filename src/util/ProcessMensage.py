@@ -44,12 +44,14 @@ class ProcessMensage:
     
     async def process(self, message: discord.Message, skip: bool, bot_user_id: int, is_mentioned: bool):
         if skip: return
+        if is_mentioned and not message.reference: return
+        
         guild = message.guild
         guild_id = guild.id if guild else 0
         chanel_id = message.channel.id
+        message_author_id = message.author.id
         isBotMessage = message.author.id == bot_user_id
         if isBotMessage: return
-        is_reply = message.reference and message.reference.message_id
         regras = self._db.get_config_by_guild(guild_id)
         if not regras: return
         if not regras[1]: return
@@ -57,7 +59,7 @@ class ProcessMensage:
         all_channel_enable = regras[4] == 1
         random_taxa: float = regras[3]
         
-        if is_mentioned and is_reply:
+        if is_mentioned:
             message_id_reply = message.reference.message_id if message.reference else 0
             message_id_reply = message_id_reply if message_id_reply else 0
             replied_message = await message.channel.fetch_message(message_id_reply)
@@ -70,15 +72,6 @@ class ProcessMensage:
             await self._send_msg(url, replied_message)
             return
     
-        message_author_id = message.author.id
-        if is_mentioned:
-            _, checking  = self._get_win_rate_by_user_id(guild_id, message_author_id, random_user_enable, random_taxa)
-            if not checking: checking = 50.0
-            url = self._rng_service(guild_id, 100, checking)
-            if not url: return
-            await self._send_msg(url, message)
-            return
-        
         if not all_channel_enable:
             channels = self._db.get_channels_by_guild(guild_id)
             if not any(channel[0] == chanel_id and channel[1] == 1 for channel in channels):
@@ -89,4 +82,3 @@ class ProcessMensage:
         url = self._rng_service(guild_id, wrate, checking)
         if not url: return
         await self._send_msg(url, message)
-            

@@ -60,7 +60,7 @@ async def on_message(message: discord.Message):
                 cargo_mention = f"<@&{cargo_id}>"
                 skip = True
                 await message.channel.send(cargo_mention)
-                break  # Só marca uma vez por mensagem
+                return
             
     is_mentioned = bot.user in message.mentions if bot.user else False
     bot_user_id = bot.user.id if bot.user else 0
