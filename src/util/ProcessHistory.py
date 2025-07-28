@@ -48,8 +48,14 @@ class ProcessHistory:
                 kwargs["after"] = after_obj
             if last_id:
                 kwargs["after"] = discord.Object(id=last_id)
+            try:
+                messages = [msg async for msg in channel.history(**kwargs)]
+            except discord.HTTPException as e:
+                if e.status == 429:
+                    print("Rate limit atingido. Aguardando 5 segundos...")
+                    await asyncio.sleep(15)
+                else: raise
 
-            messages = [msg async for msg in channel.history(**kwargs)]
             if not messages:
                 break
 
@@ -63,7 +69,7 @@ class ProcessHistory:
                 self._save_last_msg_id(channel.id, message.id)
                 last_id = message.id
             print("sleep de 100ms:", self._id_guild)  
-            await asyncio.sleep(0.4)  # 1 chamadas a cada 100ms
+            await asyncio.sleep(1)  # 1 chamadas a cada 1000ms
                 
     async def processar_historico(self, guild: discord.Guild | None):
         if not guild:
@@ -84,6 +90,7 @@ class ProcessHistory:
         for channel in guild.text_channels:
             try:
                 channel_status = get_channel_status(canais, channel.id)
+                await asyncio.sleep(10)
                 if (modus_op == "ALL") or (modus_op == "WHITE" and channel_status == 0) or (modus_op == "DENY" and channel_status != 1):
                     last_msg_id = self._get_last_msg_id(channel.id)
                     after_obj = discord.Object(id=int(last_msg_id)) if last_msg_id else None
