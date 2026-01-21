@@ -3,7 +3,7 @@ name = "discord-bot-43d-triggers"
 version = "0.1.1"
 description = "Gatilho automatico para o Discord Bot 43D"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "discord-py>=2.5.2",
     "pynacl>=1.6.2",
