@@ -1,14 +1,26 @@
 import asyncio
+import os
 import re
 import aiohttp
 import discord
 from discord import app_commands
+from discord import FFmpegOpusAudio
 from discord.ext import commands
 from src.balanceador.ProcessadorHistoricoManager import ProcessadorHistoricoManager
 from src.database.db import RegrasDB, MessagesDB
 from src.mapas.mapa import mapa_links_padrao
 from src.util.ProcessMensage import ProcessMensage
 from src.util.ProcessOsaka import ProcessOsaka
+
+
+# Configurar caminho do FFmpeg
+FFMPEG_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg').replace('src/', '').replace('src\\', '')
+if os.name == 'nt':  # Windows
+    FFMPEG_PATH += '.exe'
+print(FFMPEG_PATH)
+# ...existing code...
+
+audio_tasks = {}
 
 db = RegrasDB()
 processMsg = ProcessMensage(db)
@@ -403,3 +415,110 @@ async def remove_osaka_channel(interaction: discord.Interaction, canal: discord.
     db.remove_osaka_channels_by_guild(id_channel=canal.id, id_guild=interaction.guild_id)
     await interaction.response.send_message(f"Canal {canal.mention} removido das configurações do osaka.")
     
+
+@bot.tree.command(name="call", description="Fazer o bot entrar no seu canal de voz")
+@app_commands.checks.has_permissions(administrator=True)
+async def call(interaction: discord.Interaction):
+    voice_state = interaction.user.voice
+    if not voice_state or not voice_state.channel:
+        await interaction.response.send_message("Você precisa estar em um canal de voz.", ephemeral=True)
+        return
+
+    channel = voice_state.channel
+    perms = channel.permissions_for(interaction.guild.me) if interaction.guild else None
+    if perms and (not perms.connect or not perms.speak):
+        await interaction.response.send_message("Não tenho permissão para conectar/falar neste canal.", ephemeral=True)
+        return
+
+    guild_id = interaction.guild_id
+    voice_client = interaction.guild.voice_client if interaction.guild else None
+
+    if voice_client and voice_client.is_connected():
+        if voice_client.channel.id == channel.id:
+            await interaction.response.send_message(f"Já estou em {channel.mention}.", ephemeral=True)
+            return
+        await voice_client.move_to(channel)
+        await interaction.response.send_message(f"Movido para {channel.mention}.")
+        # Cancela task antiga se existir
+        if guild_id in audio_tasks:
+            audio_tasks[guild_id].cancel()
+        # Cria nova task de áudio
+        audio_tasks[guild_id] = bot.loop.create_task(play_audio_loop(voice_client, "memes.ogg", guild_id))
+        return
+
+    voice_client = await channel.connect()
+    await interaction.response.send_message(f"Entrei em {channel.mention}.")
+    # Cria task de áudio
+    audio_tasks[guild_id] = bot.loop.create_task(play_audio_loop(voice_client, "memes.ogg", guild_id))
+
+@bot.tree.command(name="disconnect", description="Desconectar o bot do canal de voz")
+@app_commands.checks.has_permissions(administrator=True)
+async def disconnect(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client if interaction.guild else None
+    if not voice_client or not voice_client.is_connected():
+        await interaction.response.send_message("Não estou em nenhum canal de voz.", ephemeral=True)
+        return
+    
+    # Cancela a task de áudio
+    guild_id = interaction.guild_id
+    if guild_id in audio_tasks:
+        audio_tasks[guild_id].cancel()
+        del audio_tasks[guild_id]
+
+    await voice_client.disconnect()
+    await interaction.response.send_message("Desconectado do canal de voz.")
+
+async def play_audio_loop(voice_client: discord.VoiceClient, audio_path: str, guild_id: int):
+    audio_filepath = os.path.join(os.path.dirname(__file__).replace('/src', '').replace('\\src', ''), audio_path)
+    print(f"Caminho do áudio: {audio_filepath}")
+    
+    """Toca um áudio em loop infinito"""
+    try:
+        while voice_client.is_connected():
+            if not voice_client.is_playing() and not voice_client.is_paused():
+                # Cria evento para sincronizar término
+                finished = asyncio.Event()
+                
+                def after_callback(error):
+                    if error:
+                        print(f"Erro no áudio: {error}")
+                    # Notifica que terminou
+                    bot.loop.call_soon_threadsafe(finished.set)
+                
+                # Opções do FFmpeg SEM loop infinito
+                audio_source = FFmpegOpusAudio(
+                    audio_filepath,
+                    executable=FFMPEG_PATH,
+                    before_options='-nostdin',
+                    options='-vn'
+                )
+                
+                # Toca o áudio
+                voice_client.play(audio_source, after=after_callback)
+                print(f"[Guild {guild_id}] Tocando áudio...")
+                
+                # Aguarda o áudio terminar
+                await finished.wait()
+                print(f"[Guild {guild_id}] Áudio terminou, reiniciando em 0.2s...")
+                
+                # Pequeno delay antes de tocar novamente
+                await asyncio.sleep(0.2)
+            else:
+                await asyncio.sleep(0.5)
+                
+    except asyncio.CancelledError:
+        print(f"[Guild {guild_id}] Loop de áudio cancelado")
+        if voice_client.is_playing():
+            voice_client.stop()
+        # Aguarda processo terminar
+        await asyncio.sleep(0.3)
+        raise
+    except Exception as e:
+        print(f"[Guild {guild_id}] Erro no loop de áudio: {e}")
+    finally:
+        # Cleanup
+        if voice_client.is_playing():
+            voice_client.stop()
+        if guild_id in audio_tasks:
+            del audio_tasks[guild_id]
+        print(f"[Guild {guild_id}] Cleanup do áudio concluído")
