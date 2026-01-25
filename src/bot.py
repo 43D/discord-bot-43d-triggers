@@ -419,7 +419,16 @@ async def remove_osaka_channel(interaction: discord.Interaction, canal: discord.
 @bot.tree.command(name="call", description="Fazer o bot entrar no seu canal de voz")
 @app_commands.checks.has_permissions(administrator=True)
 async def call(interaction: discord.Interaction):
-    voice_state = interaction.user.voice
+    if not interaction.guild:
+        await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
+        return
+    
+    member = interaction.guild.get_member(interaction.user.id)
+    if not member:
+        await interaction.response.send_message("Não foi possível encontrar suas informações no servidor.", ephemeral=True)
+        return
+    
+    voice_state = member.voice
     if not voice_state or not voice_state.channel:
         await interaction.response.send_message("Você precisa estar em um canal de voz.", ephemeral=True)
         return
@@ -431,7 +440,15 @@ async def call(interaction: discord.Interaction):
         return
 
     guild_id = interaction.guild_id
+    if not guild_id:
+        await interaction.response.send_message("ID do servidor não encontrado.", ephemeral=True)
+        return
+
     voice_client = interaction.guild.voice_client if interaction.guild else None
+
+    if voice_client and not isinstance(voice_client, discord.VoiceClient):
+        await interaction.response.send_message("Cliente de voz incompatível.", ephemeral=True)
+        return
 
     if voice_client and voice_client.is_connected():
         if voice_client.channel.id == channel.id:
@@ -455,6 +472,11 @@ async def call(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(administrator=True)
 async def disconnect(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client if interaction.guild else None
+
+    if voice_client and not isinstance(voice_client, discord.VoiceClient):
+        await interaction.response.send_message("Cliente de voz incompatível.", ephemeral=True)
+        return
+
     if not voice_client or not voice_client.is_connected():
         await interaction.response.send_message("Não estou em nenhum canal de voz.", ephemeral=True)
         return
