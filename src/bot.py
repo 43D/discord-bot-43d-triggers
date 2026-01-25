@@ -1,5 +1,6 @@
 import asyncio
 import os
+import random
 import re
 import aiohttp
 import discord
@@ -21,6 +22,7 @@ print(FFMPEG_PATH)
 # ...existing code...
 
 audio_tasks = {}
+audio_list = ["memes.ogg"]
 
 db = RegrasDB()
 processMsg = ProcessMensage(db)
@@ -415,7 +417,6 @@ async def remove_osaka_channel(interaction: discord.Interaction, canal: discord.
     db.remove_osaka_channels_by_guild(id_channel=canal.id, id_guild=interaction.guild_id)
     await interaction.response.send_message(f"Canal {canal.mention} removido das configurações do osaka.")
     
-
 @bot.tree.command(name="call", description="Fazer o bot entrar no seu canal de voz")
 @app_commands.checks.has_permissions(administrator=True)
 async def call(interaction: discord.Interaction):
@@ -460,13 +461,15 @@ async def call(interaction: discord.Interaction):
         if guild_id in audio_tasks:
             audio_tasks[guild_id].cancel()
         # Cria nova task de áudio
-        audio_tasks[guild_id] = bot.loop.create_task(play_audio_loop(voice_client, "memes.ogg", guild_id))
+        audio_tasks[guild_id] = bot.loop.create_task(play_audio_loop(voice_client, guild_id))
         return
 
     voice_client = await channel.connect()
     await interaction.response.send_message(f"Entrei em {channel.mention}.")
     # Cria task de áudio
-    audio_tasks[guild_id] = bot.loop.create_task(play_audio_loop(voice_client, "memes.ogg", guild_id))
+    start_index = get_random_index_audio() if audio_list else 0
+    audio_tasks[guild_id] = bot.loop.create_task(play_audio_loop(voice_client, guild_id, start_index))
+
 
 @bot.tree.command(name="disconnect", description="Desconectar o bot do canal de voz")
 @app_commands.checks.has_permissions(administrator=True)
@@ -490,41 +493,69 @@ async def disconnect(interaction: discord.Interaction):
     await voice_client.disconnect()
     await interaction.response.send_message("Desconectado do canal de voz.")
 
-async def play_audio_loop(voice_client: discord.VoiceClient, audio_path: str, guild_id: int):
-    audio_filepath = os.path.join(os.path.dirname(__file__).replace('/src', '').replace('\\src', ''), audio_path)
-    print(f"Caminho do áudio: {audio_filepath}")
+def get_audio_filepath(filename: str) -> str:
+    return os.path.join(os.path.dirname(__file__).replace('/src', '').replace('\\src', ''), filename)
+
+def get_random_index_audio() -> int:
+    return random.randint(0, len(audio_list) - 1)
+
+async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int, start_index: int = 0):
+    if not audio_list:
+        print(f"[Guild {guild_id}] Lista de áudios vazia.")
+        return
+    current_index = start_index % len(audio_list)
+    print(f"[Guild {guild_id}] Índice inicial do áudio: {current_index}")
+
     
     """Toca um áudio em loop infinito"""
     try:
         while voice_client.is_connected():
             if not voice_client.is_playing() and not voice_client.is_paused():
+                audio_filepath = get_audio_filepath(audio_list[current_index])
+                print(f"Caminho do áudio: {audio_filepath}")
                 # Cria evento para sincronizar término
                 finished = asyncio.Event()
                 
                 def after_callback(error):
                     if error:
-                        print(f"Erro no áudio: {error}")
+                        print(f"[Guild {guild_id}] Erro no áudio: {error}")
                     # Notifica que terminou
                     bot.loop.call_soon_threadsafe(finished.set)
                 
-                # Opções do FFmpeg SEM loop infinito
-                audio_source = FFmpegOpusAudio(
-                    audio_filepath,
-                    executable=FFMPEG_PATH,
-                    before_options='-nostdin',
-                    options='-vn'
-                )
-                
-                # Toca o áudio
-                voice_client.play(audio_source, after=after_callback)
-                print(f"[Guild {guild_id}] Tocando áudio...")
-                
-                # Aguarda o áudio terminar
-                await finished.wait()
-                print(f"[Guild {guild_id}] Áudio terminou, reiniciando em 0.2s...")
-                
-                # Pequeno delay antes de tocar novamente
-                await asyncio.sleep(0.2)
+                try:
+                    # Opções do FFmpeg SEM loop infinito
+                    audio_source = FFmpegOpusAudio(
+                        audio_filepath,
+                        executable=FFMPEG_PATH,
+                        before_options='-nostdin',
+                        options='-vn'
+                    )
+                    
+                    # Toca o áudio
+                    voice_client.play(audio_source, after=after_callback)
+                    print(f"[Guild {guild_id}] Tocando áudio...")
+                    
+                    # Aguarda o áudio terminar com timeout
+                    try:
+                        await asyncio.wait_for(finished.wait(), timeout=300.0)  # 5 min timeout
+                    except asyncio.TimeoutError:
+                        print(f"[Guild {guild_id}] Timeout ao aguardar término do áudio")
+                        if voice_client.is_playing():
+                            voice_client.stop()
+                        continue
+                    
+                    current_index = (current_index + 1) % len(audio_list)
+                    print(f"[Guild {guild_id}] Próximo índice: {current_index}")
+                    
+                    # Pequeno delay antes de tocar novamente
+                    delay = random.randint(300, 1000)
+                    print(f"[Guild {guild_id}] Áudio terminou, reiniciando em {delay}s...")
+                    await asyncio.sleep(delay)
+                    
+                except Exception as audio_error:
+                    print(f"[Guild {guild_id}] Erro ao criar/tocar áudio: {audio_error}")
+                    current_index = (current_index + 1) % len(audio_list)
+                    await asyncio.sleep(2.0)  # Aguarda antes de tentar novamente
             else:
                 await asyncio.sleep(0.5)
                 
@@ -544,3 +575,37 @@ async def play_audio_loop(voice_client: discord.VoiceClient, audio_path: str, gu
         if guild_id in audio_tasks:
             del audio_tasks[guild_id]
         print(f"[Guild {guild_id}] Cleanup do áudio concluído")
+
+@bot.tree.command(name="reconnect", description="Reconectar o bot no canal de voz atual")
+@app_commands.checks.has_permissions(administrator=True)
+async def reconnect(interaction: discord.Interaction):
+    if not interaction.guild:
+        await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
+        return
+    
+    voice_client = interaction.guild.voice_client
+    if not voice_client or not isinstance(voice_client, discord.VoiceClient):
+        await interaction.response.send_message("Não estou conectado em nenhum canal.", ephemeral=True)
+        return
+    
+    channel = voice_client.channel
+    guild_id = interaction.guild_id
+    if not guild_id:
+        await interaction.response.send_message("ID do servidor não encontrado.", ephemeral=True)
+        return
+    
+    # Cancela task antiga
+    if guild_id in audio_tasks:
+        audio_tasks[guild_id].cancel()
+        del audio_tasks[guild_id]
+    
+    # Desconecta e reconecta
+    await voice_client.disconnect()
+    await asyncio.sleep(1.0)
+    
+    new_voice_client = await channel.connect()
+    await interaction.response.send_message(f"Reconectado em {channel.mention}.")
+    
+    # Cria nova task
+    start_index = get_random_index_audio() if audio_list else 0
+    audio_tasks[guild_id] = bot.loop.create_task(play_audio_loop(new_voice_client, guild_id, start_index))
