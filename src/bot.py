@@ -57,20 +57,23 @@ def get_next_song() -> str:
     update_songs_list()
     if not audio_list:
         return os.path.join(os.path.dirname(__file__).replace('/src', '').replace('\\src', ''), "memes.ogg")
+    check_ban_list()
     while True:
         current_index = (current_index + 1) % len(audio_list)
         song = audio_list[current_index]
         if song not in audio_ban_list:
-            break
-            
-    return song
+            return song
 
+def check_ban_list():
+    global audio_ban_list
+    if int(len(audio_list) * 0.20) <= len(audio_ban_list):
+        audio_ban_list = audio_ban_list[1:]
+    
 def add_ban_list(song_path: str):
     global audio_ban_list
     if song_path not in audio_ban_list:
         audio_ban_list.append(song_path)
-    if int(len(audio_ban_list) * 0.20) >= len(audio_list):
-        audio_ban_list = audio_ban_list[1:]
+    check_ban_list()
 
 @bot.event
 async def on_ready():
