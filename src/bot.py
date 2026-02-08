@@ -24,6 +24,8 @@ print(FFMPEG_PATH)
 audio_tasks = {}
 audio_list = ["memes.ogg"]
 current_index = 0
+audio_ban_list = []
+
 
 db = RegrasDB()
 processMsg = ProcessMensage(db)
@@ -39,14 +41,15 @@ data_list = []
 
 def update_songs_list():
     global audio_list
-    audio_list = []
     base_path = os.path.join(os.path.dirname(__file__).replace('/src', '').replace('\\src', ''), 'sounds')
     if not os.path.exists(base_path):
         print(f"Pasta de áudio não encontrada: {base_path}")
         return
     for file in os.listdir(base_path):
         if file.endswith('.ogg') or file.endswith('.mp3'):
-            audio_list.append(os.path.join(base_path, file))
+            filepath = os.path.join(base_path, file)
+            if filepath not in audio_list:
+                audio_list.append(filepath)
     random.shuffle(audio_list)
 
 def get_next_song() -> str:
@@ -54,10 +57,19 @@ def get_next_song() -> str:
     update_songs_list()
     if not audio_list:
         return os.path.join(os.path.dirname(__file__).replace('/src', '').replace('\\src', ''), "memes.ogg")
-    
-    current_index = (current_index + 1) % len(audio_list)
-    song = audio_list[current_index]
+    while True:
+        current_index = (current_index + 1) % len(audio_list)
+        song = audio_list[current_index]
+        if song not in audio_ban_list:
+            break
+            
     return song
+
+def add_ban_list(song_path: str):
+    if song_path not in audio_ban_list:
+        audio_ban_list.add(song_path)
+    if int(len(audio_ban_list) * 0.20) >= len(audio_list):
+        audio_ban_list = audio_ban_list[1:]
 
 @bot.event
 async def on_ready():
@@ -554,6 +566,8 @@ async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
         while voice_client.is_connected():
             if not voice_client.is_playing() and not voice_client.is_paused():
                 audio_filepath = get_next_song()
+                audio_ban_list.add(audio_filepath)  # Adiciona à lista de banimento para evitar repetição imediata
+                
                 print(f"Caminho do áudio: {audio_filepath}")
                 # Cria evento para sincronizar término
                 finished = asyncio.Event()
