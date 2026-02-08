@@ -66,8 +66,9 @@ def get_next_song() -> str:
     return song
 
 def add_ban_list(song_path: str):
+    global audio_ban_list
     if song_path not in audio_ban_list:
-        audio_ban_list.add(song_path)
+        audio_ban_list.append(song_path)
     if int(len(audio_ban_list) * 0.20) >= len(audio_list):
         audio_ban_list = audio_ban_list[1:]
 
@@ -566,8 +567,7 @@ async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
         while voice_client.is_connected():
             if not voice_client.is_playing() and not voice_client.is_paused():
                 audio_filepath = get_next_song()
-                audio_ban_list.add(audio_filepath)  # Adiciona à lista de banimento para evitar repetição imediata
-                
+                add_ban_list(audio_filepath)  # Adiciona à lista de banimento para evitar repetição imediata
                 print(f"Caminho do áudio: {audio_filepath}")
                 # Cria evento para sincronizar término
                 finished = asyncio.Event()
