@@ -66,7 +66,7 @@ def get_next_song() -> str:
 
 def check_ban_list():
     global audio_ban_list
-    if int(len(audio_list) * 0.20) <= len(audio_ban_list):
+    if int(len(audio_list) * 0.85) <= len(audio_ban_list):
         audio_ban_list = audio_ban_list[1:]
     
 def add_ban_list(song_path: str):
