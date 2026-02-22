@@ -77,6 +77,14 @@ class RegrasDB:
                 enable_security INTEGER
             )
         """)
+        # Tabela de call
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS osaka_call_register (
+                guild_id INTEGER PRIMARY KEY,
+                call_id INTEGER,
+                is_connecting INTEGER
+            )
+        """)
         self.conn.commit()
 
     def add_regra(self, guild_id, canal_id, regex, cargo_id):
@@ -262,6 +270,35 @@ class RegrasDB:
             DELETE FROM osaka_channel WHERE id_channel = ? AND id_guild = ?
         """, (id_channel, id_guild))
         self.conn.commit()
+        
+    def set_osaka_call_register(self, guild_id, call_id, is_connecting):
+        self.cursor.execute("""
+            SELECT guild_id FROM osaka_call_register WHERE guild_id = ?
+        """, (guild_id,))
+        if self.cursor.fetchone():
+            self.cursor.execute("""
+                UPDATE osaka_call_register
+                SET call_id = ?, is_connecting = ?
+                WHERE guild_id = ?
+            """, (call_id, int(is_connecting), guild_id))
+        else:
+            self.cursor.execute("""
+                INSERT INTO osaka_call_register (guild_id, call_id, is_connecting)
+                VALUES (?, ?, ?)
+            """, (guild_id, call_id, int(is_connecting)))
+        self.conn.commit()    
+
+    def get_osaka_call_register(self, guild_id):
+        self.cursor.execute("""
+            SELECT call_id, is_connecting FROM osaka_call_register WHERE guild_id = ?
+        """, (guild_id,))
+        return self.cursor.fetchone()
+    
+    def get_all_osaka_call_registers(self):
+        self.cursor.execute("""
+            SELECT guild_id, call_id, is_connecting FROM osaka_call_register WHERE is_connecting = 1
+        """)
+        return self.cursor.fetchall()
         
     def close(self):
         self.conn.close()

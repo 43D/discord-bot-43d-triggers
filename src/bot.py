@@ -12,7 +12,7 @@ from src.database.db import RegrasDB, MessagesDB
 from src.mapas.mapa import mapa_links_padrao
 from src.util.ProcessMensage import ProcessMensage
 from src.util.ProcessOsaka import ProcessOsaka
-
+import sys
 
 # Configurar caminho do FFmpeg
 FFMPEG_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg').replace('src/', '').replace('src\\', '')
@@ -74,12 +74,72 @@ def add_ban_list(song_path: str):
     if song_path not in audio_ban_list:
         audio_ban_list.append(song_path)
     check_ban_list()
+    
+async def stdin_listener():
+    """Listener simples de stdin: imprime cada linha lida."""
+    loop = asyncio.get_running_loop()
+    print("stdin listener iniciado")
+    while True:
+        try:
+            line = await loop.run_in_executor(None, sys.stdin.readline)
+            if not line:  # EOF
+                print("stdin: EOF recebido, encerrando listener")
+                break
+            command = line.rstrip()
+            print(f"stdin: {command}")
+            try:
+                proc = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    executable='/bin/bash'  # usa bash como shell
+                )
+                stdout, stderr = await proc.communicate()
+                if stdout:
+                    print(stdout.decode().rstrip())
+                if stderr:
+                    print(stderr.decode().rstrip(), file=sys.stderr)
+                print(f"stdin: comando finalizado com exit code {proc.returncode}")
+            except Exception as exec_err:
+                print(f"Erro ao executar comando: {exec_err}")
+        except Exception as e:
+            print(f"Erro no stdin listener: {e}")
+            await asyncio.sleep(1)
+
+async def check_reconnecting():
+    lista = db.get_all_osaka_call_registers()
+    for guild_id, channel_id, _ in lista:
+        try:
+            gid = int(guild_id)
+            cid = int(channel_id)
+        except Exception:
+            continue
+
+        guild = bot.get_guild(gid)
+        if not guild: continue
+
+        channel = guild.get_channel(cid)
+        if not channel or not isinstance(channel, discord.VoiceChannel):
+            continue
+
+        perms = channel.permissions_for(guild.me)
+        if not (perms and perms.connect and perms.speak):
+            print(f"[Reconectar] Sem permissão para conectar/falar em guild={gid} channel={cid}")
+            continue
+        try:
+            vc = await channel.connect()
+            print(f"[Reconectar] Conectado em guild={gid} channel={cid}")
+            audio_tasks[gid] = asyncio.create_task(play_audio_loop(vc, gid))
+        except Exception as e:
+            print(f"[Reconectar] Falha ao conectar em guild={gid} channel={cid}: {e}")
 
 @bot.event
 async def on_ready():
     print(f'Bot {bot.user.name} está online!') # type: ignore
     try:
         await bot.tree.sync()
+        asyncio.create_task(stdin_listener())
+        asyncio.create_task(check_reconnecting())
     except Exception as e:
         print(f'Erro ao sincronizar comandos: {e}')
         
@@ -490,6 +550,7 @@ async def call(interaction: discord.Interaction):
         await interaction.response.send_message("Cliente de voz incompatível.", ephemeral=True)
         return
 
+    db.set_osaka_call_register(guild_id, channel.id, 1)
     if voice_client and voice_client.is_connected():
         if voice_client.channel.id == channel.id:
             await interaction.response.send_message(f"Já estou em {channel.mention}.", ephemeral=True)
@@ -513,6 +574,8 @@ async def call(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(administrator=True)
 async def disconnect(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client if interaction.guild else None
+    guild_id = interaction.guild_id
+    db.set_osaka_call_register(guild_id, 0, 0)
 
     if voice_client and not isinstance(voice_client, discord.VoiceClient):
         await interaction.response.send_message("Cliente de voz incompatível.", ephemeral=True)
@@ -523,7 +586,6 @@ async def disconnect(interaction: discord.Interaction):
         return
     
     # Cancela a task de áudio
-    guild_id = interaction.guild_id
     if guild_id in audio_tasks:
         audio_tasks[guild_id].cancel()
         del audio_tasks[guild_id]
@@ -560,6 +622,7 @@ async def reconnect(interaction: discord.Interaction):
     
     new_voice_client = await channel.connect()
     await interaction.response.send_message(f"Reconectado em {channel.mention}.")
+    db.set_osaka_call_register(guild_id, channel.id, 1)
     
     # Cria nova task
     audio_tasks[guild_id] = bot.loop.create_task(play_audio_loop(new_voice_client, guild_id))
