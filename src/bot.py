@@ -20,12 +20,13 @@ if os.name == 'nt':  # Windows
     FFMPEG_PATH += '.exe'
 print(FFMPEG_PATH)
 # ...existing code...
-
+MINIMUS_DELAYS = int(os.getenv("MINIMUS_DELAYS", "60"))
+MAXIMUS_DELAYS = int(os.getenv("MAXIMUS_DELAYS", "660"))
 audio_tasks = {}
+audio_skip_events = {}
 audio_list = ["memes.ogg"]
 current_index = 0
 audio_ban_list = []
-
 
 db = RegrasDB()
 processMsg = ProcessMensage(db)
@@ -629,9 +630,14 @@ async def reconnect(interaction: discord.Interaction):
 
 async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
     """Toca um áudio em loop infinito"""
+    skip_event = asyncio.Event()
+    audio_skip_events[guild_id] = skip_event
     try:
         while voice_client.is_connected():
             if not voice_client.is_playing() and not voice_client.is_paused():
+                # garante que event de skip não esteja setado antes de tocar
+                if skip_event.is_set():
+                    skip_event.clear()
                 audio_filepath = get_next_song()
                 add_ban_list(audio_filepath)  # Adiciona à lista de banimento para evitar repetição imediata
                 print(f"Caminho do áudio: {audio_filepath}")
@@ -667,9 +673,18 @@ async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
                         continue
                     
                     # Pequeno delay antes de tocar novamente
-                    delay = random.randint(60, 1000)
+                    delay = random.randint(MINIMUS_DELAYS, MAXIMUS_DELAYS)
                     print(f"[Guild {guild_id}] Áudio terminou, reiniciando em {delay}s...")
-                    await asyncio.sleep(delay)
+                    try:
+                        # espera pelo evento de skip ou timeout
+                        await asyncio.wait_for(skip_event.wait(), timeout=delay)
+                        # se chegou aqui, foi solicitado pular para o próximo
+                        print(f"[Guild {guild_id}] /next-audio solicitado — avançando para o próximo áudio")
+                        skip_event.clear()
+                        continue
+                    except asyncio.TimeoutError:
+                        # tempo expirou normalmente — segue para o próximo após delay
+                        pass
                     
                 except Exception as audio_error:
                     print(f"[Guild {guild_id}] Erro ao criar/tocar áudio: {audio_error}")
@@ -691,5 +706,28 @@ async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
         if voice_client.is_playing():
             voice_client.stop()
         if guild_id in audio_tasks:
-            del audio_tasks[guild_id]
+            del audio_tasks[guild_id]            
+        if guild_id in audio_skip_events:
+            del audio_skip_events[guild_id]
         print(f"[Guild {guild_id}] Cleanup do áudio concluído")
+
+# @app_commands.checks.has_permissions(administrator=True)
+@bot.tree.command(name="next-audio", description="Pula para o próximo áudio")
+async def next_audio(interaction: discord.Interaction):
+    guild_id = interaction.guild_id
+    if not guild_id:
+        await interaction.response.send_message("Comando só disponível em servidores.", ephemeral=True)
+        return
+    gid = int(guild_id)
+    if gid not in audio_tasks:
+        await interaction.response.send_message("Nenhuma reprodução ativa neste servidor.", ephemeral=True)
+        return
+    # tenta parar o áudio atual (se estiver tocando) para forçar o after_callback
+    voice_client = interaction.guild.voice_client if interaction.guild else None
+    if voice_client and isinstance(voice_client, discord.VoiceClient) and voice_client.is_playing():
+        voice_client.stop()
+    # seta o evento de skip (se existir) para interromper o delay
+    skip_event = audio_skip_events.get(gid)
+    if skip_event:
+        skip_event.set()
+    await interaction.response.send_message("Pulando para o próximo áudio...", ephemeral=True)
