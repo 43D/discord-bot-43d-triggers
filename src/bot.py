@@ -13,6 +13,7 @@ from src.mapas.mapa import mapa_links_padrao
 from src.util.ProcessMensage import ProcessMensage
 from src.util.ProcessOsaka import ProcessOsaka
 import sys
+import mutagen
 
 # Configurar caminho do FFmpeg
 FFMPEG_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg').replace('src/', '').replace('src\\', '')
@@ -75,7 +76,18 @@ def add_ban_list(song_path: str):
     if song_path not in audio_ban_list:
         audio_ban_list.append(song_path)
     check_ban_list()
-    
+
+def get_audio_duration(filepath: str) -> float:
+    try:
+        audio = mutagen.File(filepath) # type: ignore
+        if audio is not None and hasattr(audio.info, 'length'):
+            return audio.info.length
+        print("No audio, tamanho desconecido, usando fallback de 30s")
+        return 30.0
+    except Exception as e:
+        print(f"Erro ao obter duração do áudio {filepath}: {e}")
+        return 30.0
+
 async def stdin_listener():
     """Listener simples de stdin: imprime cada linha lida."""
     loop = asyncio.get_running_loop()
@@ -665,7 +677,8 @@ async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
                     
                     # Aguarda o áudio terminar com timeout
                     try:
-                        await asyncio.wait_for(finished.wait(), timeout=30.0)  # 30 sec timeout
+                        timeout = get_audio_duration(audio_filepath) + 10.0  # Duração do áudio + buffer
+                        await asyncio.wait_for(finished.wait(), timeout=timeout)
                     except asyncio.TimeoutError:
                         print(f"[Guild {guild_id}] Timeout ao aguardar término do áudio")
                         if voice_client.is_playing():
