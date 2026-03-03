@@ -743,4 +743,5 @@ async def next_audio(interaction: discord.Interaction):
     skip_event = audio_skip_events.get(gid)
     if skip_event:
         skip_event.set()
+        print(f"[Guild {gid}] Evento de skip setado para avançar para o próximo áudio")
     await interaction.response.send_message("Pulando para o próximo áudio...", ephemeral=True)
