@@ -5,8 +5,7 @@ description = "Gatilho automatico para o Discord Bot 43D"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "discord-py>=2.5.2",
+    "discord-py[voice]>=2.5.2",
     "mutagen>=1.47.0",
-    "pynacl>=1.6.2",
     "python-dotenv>=1.1.1",
 ]
