@@ -598,8 +598,8 @@ async def reconnect(interaction: discord.Interaction):
     )
 
 async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
-        manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-    # try:
+    manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
+    try:
         while voice_client.is_connected():
             if not voice_client.is_playing() and not voice_client.is_paused():
                 if manager.audio_event_is_set():
@@ -640,23 +640,23 @@ async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
                     await asyncio.sleep(2.0)
                 continue
             await asyncio.sleep(2)
-    # except asyncio.CancelledError:
-    #     print(f"[Guild {guild_id}] Loop de áudio cancelado")
-    #     if voice_client.is_playing():
-    #         voice_client.stop()
-    #     await asyncio.sleep(2)
-    #     raise
-    # except discord.errors.ConnectionClosed as e:
-    #     print(f"[Guild {guild_id}] Conexão de voz fechada (code {e.code}): {e}")
-    #     AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-    #     await attempt_voice_reconnect(guild_id)
-    # except Exception as e:
-    #     print(f"[Guild {guild_id}] Erro no loop de áudio: {e}")
-    # finally:
-    #     if voice_client.is_playing():
-    #         voice_client.stop()
-    #     AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-    #     print(f"[Guild {guild_id}] Cleanup do áudio concluído")
+    except asyncio.CancelledError:
+        print(f"[Guild {guild_id}] Loop de áudio cancelado")
+        if voice_client.is_playing():
+            voice_client.stop()
+        await asyncio.sleep(2)
+        raise
+    except discord.errors.ConnectionClosed as e:
+        print(f"[Guild {guild_id}] Conexão de voz fechada (code {e.code}): {e}")
+        AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
+        await attempt_voice_reconnect(guild_id)
+    except Exception as e:
+        print(f"[Guild {guild_id}] Erro no loop de áudio: {e}")
+    finally:
+        if voice_client.is_playing():
+            voice_client.stop()
+        AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
+        print(f"[Guild {guild_id}] Cleanup do áudio concluído")
 
 async def attempt_voice_reconnect(guild_id: int, max_retries: int = 3):
     """Tenta reconectar ao canal de voz após desconexão"""
