@@ -85,6 +85,12 @@ class RegrasDB:
                 is_connecting INTEGER
             )
         """)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS osaka_audio_ban_list (
+                guild_id INTEGER,
+                list_ban TEXT
+            )
+        """)
         self.conn.commit()
 
     def add_regra(self, guild_id, canal_id, regex, cargo_id):
@@ -271,6 +277,27 @@ class RegrasDB:
         """, (id_channel, id_guild))
         self.conn.commit()
         
+    def set_osaka_ban_list(self, guild_id, lista: list[str]):
+        data = [(guild_id, file) for file in lista]
+
+        self.cursor.execute("""
+            DELETE FROM osaka_audio_ban_list WHERE guild_id = ?
+        """, (guild_id,))
+
+        if data:
+            self.cursor.executemany("""
+                INSERT INTO osaka_audio_ban_list (guild_id, list_ban)
+                VALUES (?, ?)
+            """, data)
+    
+        self.conn.commit()
+
+    def get_osaka_ban_list(self, guild_id):
+        self.cursor.execute("""
+            SELECT list_ban FROM osaka_audio_ban_list WHERE guild_id = ?
+        """, (guild_id,))
+        return [item[0] for item in self.cursor.fetchall()]
+
     def set_osaka_call_register(self, guild_id, call_id, is_connecting):
         self.cursor.execute("""
             SELECT guild_id FROM osaka_call_register WHERE guild_id = ?
