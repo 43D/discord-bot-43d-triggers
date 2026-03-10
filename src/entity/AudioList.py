@@ -33,6 +33,9 @@ class AudioListMemory:
         BAN_LIST_FREE_UP_FLOAT = BAN_LIST_FREE_UP_INT / 100
         if int(audio_list_size * BAN_LIST_MAX_FLOAT) <= len(self.audio_ban_list):
             stuff_to_remove = int(audio_list_size * BAN_LIST_FREE_UP_FLOAT)
+            RANDOM_SEED = int(os.getenv("RANDOM_SEED", "43"))
+            for _ in range(RANDOM_SEED):
+                random.shuffle(self.audio_ban_list)
             self.audio_ban_list = self.audio_ban_list[stuff_to_remove:]
             return True
         return False
