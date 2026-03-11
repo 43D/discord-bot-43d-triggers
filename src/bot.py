@@ -26,7 +26,7 @@ print(FFMPEG_PATH)
 db = RegrasDB()
 
 AUDIO_MANAGER = AudioListManager.from_db(db.get_all_osaka_call_registers())
-for manager_temp in AUDIO_MANAGER.audio_manager.sound_effects.values():
+for manager_temp in AUDIO_MANAGER.audio_manager.values():
     lista = db.get_osaka_ban_list(manager_temp.guild_id)
     AUDIO_MANAGER.set_sounds_ban_list(manager_temp.guild_id, lista)
 
@@ -83,27 +83,31 @@ async def stdin_listener():
             await asyncio.sleep(1)
 
 async def check_reconnecting():
-    for manager in AUDIO_MANAGER.audio_manager.sound_effects.values():
+    for manager in AUDIO_MANAGER.audio_manager.values():
         guild = bot.get_guild(manager.guild_id)
-        if not guild or not manager.channel_id:
+        channel_id = manager.get_manager().channel_id
+        if not guild or not channel_id:
             continue
 
-        channel = guild.get_channel(manager.channel_id)
+        channel = guild.get_channel(channel_id)
         if not channel or not isinstance(channel, discord.VoiceChannel):
             continue
 
         perms = channel.permissions_for(guild.me)
         if not (perms and perms.connect and perms.speak):
-            print(f"[Reconectar] Sem permissão para conectar/falar em guild={manager.guild_id} channel={manager.channel_id}")
+            print(f"[Reconectar] Sem permissão para conectar/falar em guild={manager.guild_id} channel={channel_id}")
             continue
         try:
             vc = await channel.connect()
-            print(f"[Reconectar] Conectado em guild={manager.guild_id} channel={manager.channel_id}")
-            manager.update_audio_task(
-                asyncio.create_task(play_audio_loop(vc, manager.guild_id))
-            )
+            print(f"[Reconectar] Conectado em guild={manager.guild_id} channel={channel_id}")
+            if isinstance(manager, SoundEffectListMemory):
+                manager.update_audio_task(
+                    asyncio.create_task(play_audio_loop(vc, manager.guild_id))
+                )
+            elif isinstance(manager, JukeboxListMemory) and len(manager.queue) > 0:
+                ...
         except Exception as e:
-            print(f"[Reconectar] Falha ao conectar em guild={manager.guild_id} channel={manager.channel_id}: {e}")
+            print(f"[Reconectar] Falha ao conectar em guild={manager.guild_id} channel={channel_id}: {e}")
 
 async def search_ytdlp_async(query, ydl_opts):
     def extract(query, ydl_opts):
@@ -500,6 +504,8 @@ async def remove_osaka_channel(interaction: discord.Interaction, canal: discord.
 @bot.tree.command(name="call", description="Fazer o bot entrar no seu canal de voz")
 @app_commands.checks.has_permissions(administrator=True)
 async def call(interaction: discord.Interaction):
+    await interaction.response.defer()
+
     if not interaction.guild:
         await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
         return
@@ -532,7 +538,7 @@ async def call(interaction: discord.Interaction):
 
     manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
     if not isinstance(manager, SoundEffectListMemory):
-        await interaction.response.send_message("Bot ocupado com Jukebox.", ephemeral=True)
+        await interaction.response.send_message("Bot ocupado com Jukebox.", ephemeral=False)
         return
 
     AUDIO_MANAGER.set_channel_id(guild_id, channel.id)
@@ -600,10 +606,6 @@ async def reconnect(interaction: discord.Interaction):
         return
     
     manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-    if not manager:
-        await interaction.response.send_message("Não estou conectado em nenhum canal.", ephemeral=True)
-        return
-
     manager.delete_audio_task()
     await voice_client.disconnect()
     await asyncio.sleep(1.0)
@@ -612,18 +614,21 @@ async def reconnect(interaction: discord.Interaction):
     await interaction.response.send_message(f"Reconectado em {channel.mention}.")
     AUDIO_MANAGER.set_channel_id(guild_id, channel.id)
     db.set_osaka_call_register(guild_id, channel.id, 1)
-    
-    manager.update_audio_task(
-        bot.loop.create_task(play_audio_loop(new_voice_client, guild_id))
-    )
+    if isinstance(manager, SoundEffectListMemory):
+        manager.update_audio_task(
+            bot.loop.create_task(play_audio_loop(new_voice_client, guild_id))
+        )
+    else:
+        ...
 
 async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
-    manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-    if not isinstance(manager, SoundEffectListMemory):
-        print(f"[Guild {guild_id}] Manager de áudio não encontrado, encerrando loop")
-        return
     try:
         while voice_client.is_connected():
+            manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
+            if not isinstance(manager, SoundEffectListMemory):
+                print(f"[Guild {guild_id}] Manager de áudio não encontrado, encerrando loop")
+                return
+            
             if not voice_client.is_playing() and not voice_client.is_paused():
                 if manager.audio_event_is_set():
                     manager.audio_event_clear()
@@ -684,14 +689,11 @@ async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
 async def attempt_voice_reconnect(guild_id: int, max_retries: int = 3):
     """Tenta reconectar ao canal de voz após desconexão"""
     guild = bot.get_guild(guild_id)
-    if not guild:
-        return
+    if not guild: return
     
     manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-    if not manager:
-        return
     
-    if not manager.channel_id:
+    if not manager.channel_id or manager.channel_id < 1:
         register = db.get_osaka_call_register(guild_id)
         if not register or not register[1]:  # channel_id
             print(f"[Guild {guild_id}] Sem canal registrado para reconexão")
@@ -709,9 +711,12 @@ async def attempt_voice_reconnect(guild_id: int, max_retries: int = 3):
             await asyncio.sleep(2 ** attempt)  # Backoff exponencial
             vc = await channel.connect()
             print(f"[Guild {guild_id}] Reconectado com sucesso!")
-            manager.update_audio_task(
-                bot.loop.create_task(play_audio_loop(vc, guild_id))
-            )
+            if isinstance(manager, SoundEffectListMemory):
+                manager.update_audio_task(
+                    bot.loop.create_task(play_audio_loop(vc, guild_id))
+                )
+            else:
+                ...
             return
         except Exception as e:
             print(f"[Guild {guild_id}] Falha na reconexão: {e}")
@@ -720,18 +725,21 @@ async def attempt_voice_reconnect(guild_id: int, max_retries: int = 3):
     db.set_osaka_call_register(guild_id, 0, 0)  
     print(f"[Guild {guild_id}] Falha ao reconectar após {max_retries} tentativas")
 
-@bot.tree.command(name="next-audio", description="Pula para o próximo áudio")
-async def next_audio(interaction: discord.Interaction):
+@bot.tree.command(name="next-sound-effect", description="Pula para o próximo Efeito Sonoro")
+async def next_sound_effect(interaction: discord.Interaction):
     guild_id = interaction.guild_id
     if not guild_id:
         await interaction.response.send_message("Comando só disponível em servidores.", ephemeral=True)
         return
     manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-    if not manager:
+    if not isinstance(manager, SoundEffectListMemory):
+        await interaction.response.send_message("Este comando só pode ser usado quando o bot estiver em modo de Efeitos Sonoros.", ephemeral=True)
         return
+    
     if manager.audio_tasks is None:
         await interaction.response.send_message("Nenhuma reprodução ativa neste servidor.", ephemeral=True)
         return
+    
     # tenta parar o áudio atual (se estiver tocando) para forçar o after_callback
     voice_client = interaction.guild.voice_client if interaction.guild else None
     if voice_client and isinstance(voice_client, discord.VoiceClient) and voice_client.is_playing():
@@ -755,9 +763,6 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
         db.set_osaka_call_register(guild_id, after.channel.id, 1)
         
         manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-        if not manager:
-            print(f"[Guild {guild_id}] Manager de áudio não encontrado após movimento")
-            return
         if manager.audio_tasks:
             print(f"[Guild {guild_id}] Áudio continua no novo canal")
     
@@ -766,96 +771,3 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
         print(f"[Guild {guild_id}] Bot foi desconectado/kickado de {before.channel.name}")
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
         db.set_osaka_call_register(guild_id, 0, 0)
-
-@bot.tree.command(name="play", description="Sons da plataforma vermelha.")
-@app_commands.describe(song_query="URL ou título da música a ser tocada")
-async def play(interaction: discord.Interaction, song_query: str):
-    await interaction.response.defer()
-
-    if not interaction.guild:
-        await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
-        return
-    
-    member = interaction.guild.get_member(interaction.user.id)
-    if not member:
-        await interaction.response.send_message("Não foi possível encontrar suas informações no servidor.", ephemeral=True)
-        return
-    
-    voice_state = member.voice
-    if not voice_state or not voice_state.channel:
-        await interaction.response.send_message("Você precisa estar em um canal de voz.", ephemeral=True)
-        return
-
-    channel = voice_state.channel
-    perms = channel.permissions_for(interaction.guild.me) if interaction.guild else None
-    if perms and (not perms.connect or not perms.speak):
-        await interaction.response.send_message("Não tenho permissão para conectar/falar neste canal.", ephemeral=True)
-        return
-
-    guild_id = interaction.guild_id
-    if not guild_id:
-        await interaction.response.send_message("ID do servidor não encontrado.", ephemeral=True)
-        return
-
-    voice_client = interaction.guild.voice_client if interaction.guild else None
-    if voice_client and not isinstance(voice_client, discord.VoiceClient):
-        await interaction.response.send_message("Cliente de voz incompatível.", ephemeral=True)
-        return
-
-    manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-    
-    AUDIO_MANAGER.set_channel_id(guild_id, channel.id)
-    db.set_osaka_call_register(guild_id, channel.id, 1)
-
-    if voice_client and voice_client.is_connected():
-        if voice_client.channel.id == channel.id:
-            await interaction.response.send_message(f"Já estou em {channel.mention}.", ephemeral=True)
-            return
-        await voice_client.move_to(channel)
-        await interaction.response.send_message(f"Movido para {channel.mention}.")
-
-        AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-    else:
-        voice_client = await channel.connect()
-        await interaction.response.send_message(f"Entrei em {channel.mention}.")
-
-    
-
-    manager.update_audio_task(
-        bot.loop.create_task(play_audio_loop(voice_client, guild_id))
-    )
-
-
-
-
-
-    # ydl_options = {
-    #     "format": "bestaudio[abr<=96]/bestaudio",
-    #     "noplaylist": True,
-    #     "youtube_include_dash_manifest": False,
-    #     "youtube_include_hls_manifest": False,
-    # }
-
-    # query = "ytsearch1: " + song_query
-    # results = await search_ytdlp_async(query, ydl_options)
-    # tracks = results.get("entries", [])
-
-    # if tracks is None:
-    #     await interaction.followup.send("No results found.")
-    #     return
-
-    # first_track = tracks[0]
-    # audio_url = first_track["url"]
-    # title = first_track.get("title", "Untitled")
-
-    # guild_id = str(interaction.guild_id)
-    # if SONG_QUEUES.get(guild_id) is None:
-    #     SONG_QUEUES[guild_id] = deque()
-
-    # SONG_QUEUES[guild_id].append((audio_url, title))
-
-    # if voice_client.is_playing() or voice_client.is_paused():
-    #     await interaction.followup.send(f"Added to queue: **{title}**")
-    # else:
-    #     await interaction.followup.send(f"Now playing: **{title}**")
-    #     await play_next_song(voice_client, guild_id, interaction.channel)

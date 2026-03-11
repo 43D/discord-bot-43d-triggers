@@ -7,78 +7,66 @@ from src.entity.JukeboxListMemory import JukeboxListMemory
 
 @dataclass
 class AudioManager:
-    sound_effects: dict[str, SoundEffectListMemory]
-    jukebox: dict[str, JukeboxListMemory]
+    sound_effects: SoundEffectListMemory
+    jukebox: JukeboxListMemory
     audio_source: Literal["JUKEBOX", "SOUND_EFFECT"] = "SOUND_EFFECT"
+    guild_id: int = 0
 
-    def get_manager(self, guild_id):
-        if self.audio_source == "SOUND_EFFECT" and str(guild_id) not in self.sound_effects:
-            self.sound_effects[str(guild_id)] = SoundEffectListMemory.from_guild(guild_id, [])
-        elif self.audio_source == "JUKEBOX" and str(guild_id) not in self.jukebox:
-            self.jukebox[str(guild_id)] = JukeboxListMemory.from_guild(guild_id, 0)
+    def get_manager(self):
+        if self.audio_source == "SOUND_EFFECT":
+            return self.sound_effects
+        return self.jukebox
 
-        return self.jukebox.get(str(guild_id)) if self.audio_source == "JUKEBOX" else self.sound_effects.get(str(guild_id))
+    def delete_manager(self):
+        data = self.jukebox if self.audio_source == "JUKEBOX" else self.sound_effects
+        data.delete_event()
+        data.delete_audio_task()
 
-    def delete_manager(self, guild_id):
-        data = None
-        if self.audio_source == "JUKEBOX" and str(guild_id) in self.jukebox:
-            data = self.jukebox[str(guild_id)]
-        elif self.audio_source == "SOUND_EFFECT" and str(guild_id) in self.sound_effects:
-            data = self.sound_effects[str(guild_id)]
-        if data:
-            data.delete_event()
-            data.delete_audio_task()
+    def set_channel_id(self, channel_id: int):
+        self.jukebox.channel_id = channel_id
+        self.sound_effects.channel_id = channel_id
 
-    def set_channel_id(self, guild_id: int, channel_id: int):
-        if self.audio_source == "JUKEBOX":
-            if str(guild_id) not in self.jukebox:
-                self.jukebox[str(guild_id)] = JukeboxListMemory.from_guild(guild_id, channel_id)
-            else:
-                self.jukebox[str(guild_id)].channel_id = channel_id
-        else:
-            if str(guild_id) not in self.sound_effects:
-                self.sound_effects[str(guild_id)] = SoundEffectListMemory.from_guild(guild_id, [])
-            self.sound_effects[str(guild_id)].channel_id = channel_id
+    def __add_to_ban_list(self, song_path: str):
+        self.sound_effects.add_to_ban_list(song_path)
 
-    def __add_to_ban_list(self, guild_id: int, song_path: str):
-        if str(guild_id) not in self.sound_effects:
-            self.sound_effects[str(guild_id)] = SoundEffectListMemory.from_guild(guild_id, [song_path])
-        self.sound_effects[str(guild_id)].add_to_ban_list(song_path)
+    def __calculate_ban_list_size(self, len_audio_list: int) -> bool:
+        return self.sound_effects.calculate_ban_list_size(len_audio_list)
 
-    def __calculate_ban_list_size(self, guild_id: int, len_audio_list: int) -> bool:
-        if str(guild_id) not in self.sound_effects:
-            return False
-        return self.sound_effects[str(guild_id)].calculate_ban_list_size(len_audio_list)
-
-    def __get_next_song_sound_effect(self, audio_list: list[str], guild_id: int) -> str:
-        if str(guild_id) not in self.sound_effects:
-            self.sound_effects[str(guild_id)] = SoundEffectListMemory.from_guild(guild_id, [])
-        audio_list_final = [song for song in audio_list if not self.sound_effects[str(guild_id)].check_ban_list(song)]
+    def __get_next_song_sound_effect(self, audio_list: list[str]) -> str:
+        audio_list_final = [song for song in audio_list if not self.sound_effects.check_ban_list(song)]
         RANDOM_SEED = int(os.getenv("RANDOM_SEED", "43"))
         for _ in range(RANDOM_SEED):
             random.shuffle(audio_list_final)
         song = random.choice(audio_list_final)
-        self.__add_to_ban_list(guild_id, song)
-        self.__calculate_ban_list_size(guild_id, len(audio_list))
+        self.__add_to_ban_list(song)
+        self.__calculate_ban_list_size(len(audio_list))
         return song
 
-    def __get_next_song_jukebox(self, guild_id: int) -> str:
+    def __get_next_song_jukebox(self) -> str:
         return ""
     
     def get_next_song(self, audio_list: list[str], guild_id: int) -> str:
         if self.audio_source == "JUKEBOX":
-            return self.__get_next_song_jukebox(guild_id)
-        return self.__get_next_song_sound_effect(audio_list, guild_id)
+            return self.__get_next_song_jukebox()
+        return self.__get_next_song_sound_effect(audio_list)
 
+    def set_audio_source(self, audio_source: Literal["JUKEBOX", "SOUND_EFFECT"]):
+        self.audio_source = audio_source
 
     @staticmethod
-    def mock():
-        return AudioManager(sound_effects={}, jukebox={})
-
+    def from_db(guild_id: int, channel_id: int, audio_ban_list: list[str], audio_source: Literal["JUKEBOX", "SOUND_EFFECT"] = "SOUND_EFFECT"):
+        manager = AudioManager(
+            sound_effects=SoundEffectListMemory.from_guild(guild_id, audio_ban_list),
+            jukebox=JukeboxListMemory.from_guild(guild_id, channel_id),
+            guild_id=guild_id,
+            audio_source=audio_source
+        )
+        manager.set_channel_id(channel_id)
+        return manager
 
 @dataclass
 class AudioListManager:
-    audio_manager: AudioManager
+    audio_manager: dict[str, AudioManager]
     audio_list: list[str]
 
     def update_audio_list(self):
@@ -96,26 +84,35 @@ class AudioListManager:
         random.shuffle(audio_list)
         self.audio_list = audio_list
 
+    def get_by_guild_id(self, guild_id: int):
+        if not str(guild_id) in self.audio_manager:
+            self.audio_manager[str(guild_id)] = AudioManager.from_db(guild_id, 0, [])
+        return self.audio_manager[str(guild_id)]
+
     def get_next_song(self, guild_id: int) -> str:
-        return self.audio_manager.get_next_song(self.audio_list, guild_id)
+        m = self.get_by_guild_id(guild_id)
+        return m.get_next_song(self.audio_list, guild_id)
     
     def get_manager_by_guild_id(self, guild_id: int):
-        return self.audio_manager.get_manager(str(guild_id))
+        m = self.get_by_guild_id(guild_id)
+        return m.get_manager()
 
     def delete_manager_by_guild_id(self, guild_id: int):
-        self.audio_manager.delete_manager(str(guild_id))
+        self.get_by_guild_id(guild_id).delete_manager()
 
     def set_channel_id(self, guild_id: int, channel_id: int):
-        self.audio_manager.set_channel_id(guild_id, channel_id)
+        self.get_by_guild_id(guild_id).set_channel_id(channel_id)
 
     def set_sounds_ban_list(self, guild_id: int, ban_list: list[str]):
-        if str(guild_id) not in self.audio_manager.sound_effects:
-            self.audio_manager.sound_effects[str(guild_id)] = SoundEffectListMemory.from_guild(guild_id, [])
-        self.audio_manager.sound_effects[str(guild_id)].audio_ban_list = ban_list
+        self.get_by_guild_id(guild_id).sound_effects.audio_ban_list = ban_list
+
+    def set_audio_source(self, guild_id: int, audio_source: Literal["JUKEBOX", "SOUND_EFFECT"]):
+        m = self.get_by_guild_id(guild_id)
+        m.set_audio_source(audio_source)
 
     @staticmethod
     def from_db(lista: list[tuple[int, int, int]]):
-        entity = AudioListManager(audio_manager=AudioManager.mock(), audio_list=[])
+        entity = AudioListManager(audio_manager={}, audio_list=[])
         entity.update_audio_list()
         for guild_id, channel_id, _ in lista:
             try:
@@ -123,10 +120,5 @@ class AudioListManager:
                 int(channel_id)
             except Exception:
                 continue
-            if str(guild_id) not in entity.audio_manager.sound_effects:
-                entity.audio_manager.sound_effects[str(guild_id)] = SoundEffectListMemory.from_guild(guild_id, [])
-            entity.audio_manager.sound_effects[str(guild_id)].channel_id = channel_id
-            if str(guild_id) not in entity.audio_manager.jukebox:
-                entity.audio_manager.jukebox[str(guild_id)] = JukeboxListMemory.from_guild(guild_id, channel_id)
-
+            entity.audio_manager[str(guild_id)] = AudioManager.from_db(guild_id, channel_id, [])
         return entity
