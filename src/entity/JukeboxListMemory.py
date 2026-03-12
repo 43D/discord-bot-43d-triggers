@@ -1,4 +1,4 @@
-from asyncio import Event, Task
+from asyncio import Event, Task, wait_for
 from dataclasses import dataclass, field
 from collections import deque
 
@@ -6,8 +6,10 @@ from collections import deque
 class JukeboxListMemory:
     guild_id: int
     channel_id: int | None = None
+    channel_id_msg: int | None = None
     queue: deque = field(default_factory=deque)
     audio_tasks: Task | None = None
+    audio_player_events: Event | None = None
     audio_skip_events: Event | None = None
 
     @staticmethod
@@ -42,3 +44,30 @@ class JukeboxListMemory:
     def delete_event(self):
         if self.audio_skip_events is not None:
             self.audio_skip_events = None
+
+    def audio_is_play(self) -> bool:
+        if self.audio_player_events is None:
+            self.audio_player_events = Event()
+        return self.audio_player_events.is_set()
+
+    def audio_player_ending(self):
+        if self.audio_player_events is None:
+            self.audio_player_events = Event()
+        self.audio_player_events.set()
+
+    async def audio_player_await(self, timeout: float):
+        if self.audio_player_events is None:
+            self.audio_player_events = Event()
+        await wait_for(self.audio_player_events.wait(), timeout=timeout + 10.0)
+        self.audio_player_clear()
+
+    def audio_player_clear(self):
+        if self.audio_player_events is None:
+            self.audio_player_events = Event()
+        self.audio_player_events.clear()
+        
+    def check_empty(self) -> bool:
+        return len(self.queue) == 0 and self.audio_tasks is None
+    
+    def add_song_to_queue(self, song_entries: dict):
+        self.queue.append(song_entries)

@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from  dotenv import load_dotenv
-from src.bot import bot, db
+from src.bot import bot, DB
     
 if __name__ == "__main__":
     env_path = Path('.') / '.env'
@@ -9,4 +9,4 @@ if __name__ == "__main__":
     TOKEN = os.getenv("TOKEN", "")
     print('Token:', TOKEN[:8], '...', TOKEN[-8:])
     bot.run(TOKEN)
-    db.close()
+    DB.close()

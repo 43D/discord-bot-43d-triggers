@@ -4,7 +4,6 @@ import re
 import aiohttp
 import discord
 from discord import app_commands
-from discord import FFmpegOpusAudio
 from discord.ext import commands
 from src.entity.AudioList import AudioListManager
 from src.entity.SoundEffectListMemory import SoundEffectListMemory
@@ -15,46 +14,39 @@ from src.mapas.mapa import mapa_links_padrao
 from src.util.ProcessMensage import ProcessMensage
 from src.util.ProcessOsaka import ProcessOsaka
 import sys
-import mutagen
 import yt_dlp
 
-FFMPEG_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg').replace('src/', '').replace('src\\', '')
-if os.name == 'nt':  # Windows
-    FFMPEG_PATH += '.exe'
-print(FFMPEG_PATH)
+DB = RegrasDB()
 
-db = RegrasDB()
-
-AUDIO_MANAGER = AudioListManager.from_db(db.get_all_osaka_call_registers())
+AUDIO_MANAGER = AudioListManager.from_db(DB.get_all_osaka_call_registers())
 for manager_temp in AUDIO_MANAGER.audio_manager.values():
-    lista = db.get_osaka_ban_list(manager_temp.guild_id)
+    lista = DB.get_osaka_ban_list(manager_temp.guild_id)
     AUDIO_MANAGER.set_sounds_ban_list(manager_temp.guild_id, lista)
 
-processMsg = ProcessMensage(db)
-historico_manager = ProcessadorHistoricoManager(db, 3)
+processMsg = ProcessMensage(DB)
+historico_manager = ProcessadorHistoricoManager(DB, 3)
 messagesDB = MessagesDB()
-osakaBot = ProcessOsaka(messagesDB, db)
+osakaBot = ProcessOsaka(messagesDB, DB)
+
 intents = discord.Intents.default()
 intents.messages = True
 intents.guilds = True
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
+from src.audio.AudioPlayer import play_sound_effects_loop
 
-def get_audio_duration(filepath: str) -> float:
-    try:
-        audio = mutagen.File(filepath) # type: ignore
-        if audio is not None and hasattr(audio.info, 'length'):
-            return audio.info.length
-        print("No audio, tamanho desconecido, usando fallback de 30s")
-        return 30.0
-    except Exception as e:
-        print(f"Erro ao obter duração do áudio {filepath}: {e}")
-        return 30.0
+YDL_OPTS = {
+    "format": "bestaudio/best",
+    "noplaylist": True,
+    "youtube_include_dash_manifest": False,
+    "youtube_include_hls_manifest": False,
+}
 
 async def stdin_listener():
     """Listener simples de stdin: imprime cada linha lida."""
     loop = asyncio.get_running_loop()
     print("stdin listener iniciado")
+    return
     while True:
         try:
             line = await loop.run_in_executor(None, sys.stdin.readline)
@@ -100,22 +92,28 @@ async def check_reconnecting():
         try:
             vc = await channel.connect()
             print(f"[Reconectar] Conectado em guild={manager.guild_id} channel={channel_id}")
-            if isinstance(manager, SoundEffectListMemory):
-                manager.update_audio_task(
-                    asyncio.create_task(play_audio_loop(vc, manager.guild_id))
+            print(type(manager))
+            if manager.check_audio_jukebox_empty():
+                manager.set_audio_source("SOUND_EFFECT")
+
+            mm = manager.get_manager()
+            if isinstance(mm, SoundEffectListMemory):
+                mm.update_audio_task(
+                    asyncio.create_task(play_sound_effects_loop(vc, manager.guild_id))
                 )
             elif isinstance(manager, JukeboxListMemory) and len(manager.queue) > 0:
                 ...
         except Exception as e:
             print(f"[Reconectar] Falha ao conectar em guild={manager.guild_id} channel={channel_id}: {e}")
 
-async def search_ytdlp_async(query, ydl_opts):
-    def extract(query, ydl_opts):
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+async def search_ytdlp_async(query):
+    def extract(query):
+        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl: # type: ignore
             return ydl.extract_info(query, download=False)
         
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, lambda: extract(query, ydl_opts))
+    res =  await loop.run_in_executor(None, lambda: extract(query))
+    return res.get("entries", [])
 
     
 @bot.event
@@ -130,10 +128,10 @@ async def on_ready():
         
 @bot.event
 async def on_guild_join(guild: discord.Guild):
-    config = db.get_config_by_guild(guild.id)
+    config = DB.get_config_by_guild(guild.id)
     
     if not config:
-        db.add_config(
+        DB.add_config(
             guild_id=guild.id,
             enable_fatos=False,
             random_user_enable=False,
@@ -141,7 +139,7 @@ async def on_guild_join(guild: discord.Guild):
             all_channel_enable=True,
             enable_security=True
         )
-        [db.set_url_config(guild.id, m["link"], m["tipo"]) for m in mapa_links_padrao]
+        [DB.set_url_config(guild.id, m["link"], m["tipo"]) for m in mapa_links_padrao]
         print(f"Configuração padrão criada para guild {guild.id}")
 
         
@@ -149,8 +147,8 @@ async def on_guild_join(guild: discord.Guild):
 async def on_message(message: discord.Message):
     skip = False
     guild = message.guild
-    regras = db.get_regras_by_guild(guild.id if guild else 0)
-    enable_osaka = db.get_configs_by_tag(guild.id if guild else 0, "osaka_enable")
+    regras = DB.get_regras_by_guild(guild.id if guild else 0)
+    enable_osaka = DB.get_configs_by_tag(guild.id if guild else 0, "osaka_enable")
     
     for _, canal_id, regex, cargo_id in regras:
         if message.channel.id == canal_id:
@@ -176,7 +174,7 @@ async def on_message(message: discord.Message):
     cargo="Cargo a ser mencionado quando a regex for encontrada"
 )
 async def add(interaction: discord.Interaction, canal: discord.TextChannel, regex: str, cargo: discord.Role):
-    db.add_regra(interaction.guild_id, canal.id, regex, cargo.id)
+    DB.add_regra(interaction.guild_id, canal.id, regex, cargo.id)
     await interaction.response.send_message(
         f"Regra salva para {canal.mention} com regex `{regex}` e cargo {cargo.mention}"
     )
@@ -184,7 +182,7 @@ async def add(interaction: discord.Interaction, canal: discord.TextChannel, rege
 @bot.tree.command(name="list", description="lista as regras salvas")
 @app_commands.checks.has_permissions(administrator=True)
 async def list_rules(interaction: discord.Interaction):
-    regras = db.get_regras_by_guild(interaction.guild_id)
+    regras = DB.get_regras_by_guild(interaction.guild_id)
     if not regras:
         await interaction.response.send_message("Nenhuma regra cadastrada para este servidor.", ephemeral=True)
         return
@@ -201,7 +199,7 @@ async def list_rules(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(id="ID da regra a ser removida")
 async def remove(interaction: discord.Interaction, id: int):
-    db.remove_regra(interaction.guild_id, id)
+    DB.remove_regra(interaction.guild_id, id)
     await interaction.response.send_message(f"Regra com id `{id}` removida.")
     
 @bot.tree.command(name="set_fatos_configs", description="Atualiza as configs do fatos_check para este servidor")
@@ -228,7 +226,7 @@ async def remove(interaction: discord.Interaction, id: int):
 )
 async def set_fatos_configs(interaction: discord.Interaction,enable_fatos: int,random_user_enable: int,random_taxa: float,all_channel_enable: int):
     print(interaction.guild_id, enable_fatos, random_user_enable, random_taxa, all_channel_enable)
-    db.update_config(
+    DB.update_config(
         guild_id=interaction.guild_id,enable_fatos=enable_fatos,random_user_enable=random_user_enable,
         random_taxa=random_taxa,all_channel_enable=all_channel_enable,enable_security=True
     )
@@ -237,7 +235,7 @@ async def set_fatos_configs(interaction: discord.Interaction,enable_fatos: int,r
 @bot.tree.command(name="list_fatos_configs", description="Mostra as configs do fatos_check para este servidor")
 @app_commands.checks.has_permissions(administrator=True)
 async def list_fatos_configs(interaction: discord.Interaction):
-    config = db.get_config_by_guild(interaction.guild_id)
+    config = DB.get_config_by_guild(interaction.guild_id)
     if not config:
         await interaction.response.send_message("Nenhuma configuração encontrada para este servidor.", ephemeral=True)
         return
@@ -272,7 +270,7 @@ async def set_fatos_user(interaction: discord.Interaction, usuario: discord.Memb
         await interaction.response.send_message("O win_rate deve ser entre 0.01 e 99.99", ephemeral=True)
         return
 
-    db.set_user_config(
+    DB.set_user_config(
         user_id=usuario.id, guild_id=interaction.guild_id, nome=usuario.display_name,
         taxa=drop_rate, checking=win_rate, deny=enable
     )
@@ -281,7 +279,7 @@ async def set_fatos_user(interaction: discord.Interaction, usuario: discord.Memb
 @bot.tree.command(name="list_fatos_users", description="Lista as configs dos usuários do fatos_check para este servidor")
 @app_commands.checks.has_permissions(administrator=True)
 async def list_fatos_users(interaction: discord.Interaction):
-    users = db.get_users_by_guild(interaction.guild_id)
+    users = DB.get_users_by_guild(interaction.guild_id)
     if not users:
         await interaction.response.send_message("Nenhum usuário configurado para este servidor.", ephemeral=True)
         return
@@ -303,7 +301,7 @@ async def list_fatos_users(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(usuario="Usuário a ser removido das configs")
 async def remove_fatos_user(interaction: discord.Interaction, usuario: discord.Member):
-    db.remove_user_config(user_id=usuario.id, guild_id=interaction.guild_id)
+    DB.remove_user_config(user_id=usuario.id, guild_id=interaction.guild_id)
     await interaction.response.send_message(f"Usuário {usuario.mention} removido das configurações do fatos_check.", ephemeral=True)
     
 @bot.tree.command(name="set_fatos_channel", description="Adiciona ou atualiza um canal na configuração do fatos_check")
@@ -314,13 +312,13 @@ async def remove_fatos_user(interaction: discord.Interaction, usuario: discord.M
     app_commands.Choice(name="Desativar", value=0)
 ])
 async def set_fatos_channel(interaction: discord.Interaction, canal: discord.TextChannel, ativo: int):
-    db.set_channel_config(id_channel=canal.id, id_guild=interaction.guild_id, allow=ativo)
+    DB.set_channel_config(id_channel=canal.id, id_guild=interaction.guild_id, allow=ativo)
     await interaction.response.send_message(f"Canal {canal.mention} {'ativado' if ativo else 'desativado'} para fatos_check.")
 
 @bot.tree.command(name="list_fatos_channel", description="Lista os canais configurados para fatos_check")
 @app_commands.checks.has_permissions(administrator=True)
 async def list_fatos_channel(interaction: discord.Interaction):
-    canais = db.get_channels_by_guild(interaction.guild_id)
+    canais = DB.get_channels_by_guild(interaction.guild_id)
     if not canais:
         await interaction.response.send_message("Nenhum canal configurado para fatos_check.", ephemeral=True)
         return
@@ -342,7 +340,7 @@ async def list_fatos_channel(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(canal="Canal a ser removido")
 async def remove_fatos_channel(interaction: discord.Interaction, canal: discord.TextChannel):
-    db.remove_channel_config(id_channel=canal.id, id_guild=interaction.guild_id)
+    DB.remove_channel_config(id_channel=canal.id, id_guild=interaction.guild_id)
     await interaction.response.send_message(f"Canal {canal.mention} removido das configurações do fatos_check.")
     
 @bot.tree.command(name="set_fatos_image_url", description="Adicione uma URL de imagem para o banco de dados")
@@ -356,7 +354,7 @@ async def set_fatos_image_url(interaction: discord.Interaction, url: str, tipo: 
     guild_id = str(interaction.guild_id)
     tipo_value = tipo.value
     
-    exists = db.check_url_exists(guild_id, url, tipo_value)
+    exists = DB.check_url_exists(guild_id, url, tipo_value)
     if exists:
         await interaction.response.send_message("Esta URL já está registrada para este servidor!", ephemeral=True)
         return
@@ -372,7 +370,7 @@ async def set_fatos_image_url(interaction: discord.Interaction, url: str, tipo: 
         await interaction.response.send_message("Erro ao validar a URL!", ephemeral=True)
         return
     
-    db.set_url_config(id_guild=guild_id, url=url, tipo=tipo_value)
+    DB.set_url_config(id_guild=guild_id, url=url, tipo=tipo_value)
     await interaction.response.send_message("Imagem registrada com sucesso!", ephemeral=False)
     
 @bot.tree.command(name="remove_fatos_image_url", description="Remove um imagem da configuração do fatos_check")
@@ -380,14 +378,14 @@ async def set_fatos_image_url(interaction: discord.Interaction, url: str, tipo: 
 @app_commands.describe(id="Imagem/url a ser removido (pege id em /list_fatos_urls)")
 async def remove_fatos_image_url(interaction: discord.Interaction, id: int):
     guild_id = str(interaction.guild_id)
-    db.remove_url_config(id=id, id_guild=guild_id)
+    DB.remove_url_config(id=id, id_guild=guild_id)
     await interaction.response.send_message(f"Imagem removido das configurações do fatos_check.")
 
 @bot.tree.command(name="list_fatos_image_url", description="Liste as imagem da configuradas no fatos_check")
 @app_commands.checks.has_permissions(administrator=True)
 async def list_fatos_image_url(interaction: discord.Interaction):
     guild_id = str(interaction.guild_id)
-    res = db.get_url_by_guild(guild_id)
+    res = DB.get_url_by_guild(guild_id)
     if not res:
         await interaction.response.send_message("Nenhuma imagem registrada para este servidor.", ephemeral=True)
         return
@@ -407,7 +405,7 @@ async def list_fatos_image_url(interaction: discord.Interaction):
 @bot.tree.command(name="reset_fatos_image_url_to_default", description="Restaure as configs de image_url para padrão")
 @app_commands.checks.has_permissions(administrator=True)
 async def reset_fatos_image_url_to_default(interaction: discord.Interaction):
-    [db.set_url_config(interaction.guild_id, m["link"], m["tipo"]) for m in mapa_links_padrao]
+    [DB.set_url_config(interaction.guild_id, m["link"], m["tipo"]) for m in mapa_links_padrao]
     await interaction.response.send_message("Resetado!", ephemeral=True)
 
 @bot.tree.command(name="set_osaka_configs", description="Configure essa copia de osaka")
@@ -430,9 +428,9 @@ async def set_osaka_configs(interaction: discord.Interaction, enable: app_comman
         await interaction.response.send_message("A taxa de drop deve ser entre 0.0 e 100.", ephemeral=True)
         return
     
-    db.set_config_by_tag(guild_id=guild_id, tag="osaka_enable", value=enable_value)
-    db.set_config_by_tag(guild_id=guild_id, tag="osaka_mode", value=tipo_value)
-    db.set_config_by_tag(guild_id=guild_id, tag="osaka_rate", value=rate)
+    DB.set_config_by_tag(guild_id=guild_id, tag="osaka_enable", value=enable_value)
+    DB.set_config_by_tag(guild_id=guild_id, tag="osaka_mode", value=tipo_value)
+    DB.set_config_by_tag(guild_id=guild_id, tag="osaka_rate", value=rate)
 
     
     if enable_value == 1:
@@ -444,9 +442,9 @@ async def set_osaka_configs(interaction: discord.Interaction, enable: app_comman
 @app_commands.checks.has_permissions(administrator=True)
 async def get_osaka_configs(interaction: discord.Interaction):
     guild_id = str(interaction.guild_id)
-    enable = db.get_configs_by_tag(guild_id, "osaka_enable")
-    modus_op = db.get_configs_by_tag(guild_id, "osaka_mode")
-    rate = db.get_configs_by_tag(guild_id, "osaka_rate")
+    enable = DB.get_configs_by_tag(guild_id, "osaka_enable")
+    modus_op = DB.get_configs_by_tag(guild_id, "osaka_mode")
+    rate = DB.get_configs_by_tag(guild_id, "osaka_rate")
     
     if enable is None or modus_op is None or rate is None:
         await interaction.response.send_message("Nenhuma configuração encontrada para este servidor.", ephemeral=True)
@@ -468,15 +466,15 @@ async def get_osaka_configs(interaction: discord.Interaction):
 ])
 async def set_osaka_channel(interaction: discord.Interaction, canal: discord.TextChannel, lista: app_commands.Choice[int]):
     lista_value = lista.value
-    db.set_osaka_channel_config(id_channel=canal.id, id_guild=interaction.guild_id, allow=lista_value)
-    if db.get_configs_by_tag(interaction.guild_id, "osaka_enable") == 1:
+    DB.set_osaka_channel_config(id_channel=canal.id, id_guild=interaction.guild_id, allow=lista_value)
+    if DB.get_configs_by_tag(interaction.guild_id, "osaka_enable") == 1:
         await historico_manager.adicionar_guild(interaction.guild)
     await interaction.response.send_message(f"Canal {canal.mention} configurado.")
 
 @bot.tree.command(name="list_osaka_channel", description="Lista os canais configurados para osaka")
 @app_commands.checks.has_permissions(administrator=True)
 async def list_osaka_channel(interaction: discord.Interaction):
-    canais = db.get_osaka_channels_by_guild(interaction.guild_id)
+    canais = DB.get_osaka_channels_by_guild(interaction.guild_id)
     if not canais:
         await interaction.response.send_message("Nenhum canal configurado para fatos_check.", ephemeral=True)
         return
@@ -498,7 +496,7 @@ async def list_osaka_channel(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(canal="Canal a ser removido")
 async def remove_osaka_channel(interaction: discord.Interaction, canal: discord.TextChannel):
-    db.remove_osaka_channels_by_guild(id_channel=canal.id, id_guild=interaction.guild_id)
+    DB.remove_osaka_channels_by_guild(id_channel=canal.id, id_guild=interaction.guild_id)
     await interaction.response.send_message(f"Canal {canal.mention} removido das configurações do osaka.")
     
 @bot.tree.command(name="call", description="Fazer o bot entrar no seu canal de voz")
@@ -507,60 +505,60 @@ async def call(interaction: discord.Interaction):
     await interaction.response.defer()
 
     if not interaction.guild:
-        await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
+        await interaction.followup.send("Este comando só pode ser usado em servidores.", ephemeral=True)
         return
     
     member = interaction.guild.get_member(interaction.user.id)
     if not member:
-        await interaction.response.send_message("Não foi possível encontrar suas informações no servidor.", ephemeral=True)
+        await interaction.followup.send("Não foi possível encontrar suas informações no servidor.", ephemeral=True)
         return
     
     voice_state = member.voice
     if not voice_state or not voice_state.channel:
-        await interaction.response.send_message("Você precisa estar em um canal de voz.", ephemeral=True)
+        await interaction.followup.send("Você precisa estar em um canal de voz.", ephemeral=True)
         return
 
     channel = voice_state.channel
     perms = channel.permissions_for(interaction.guild.me) if interaction.guild else None
     if perms and (not perms.connect or not perms.speak):
-        await interaction.response.send_message("Não tenho permissão para conectar/falar neste canal.", ephemeral=True)
+        await interaction.followup.send("Não tenho permissão para conectar/falar neste canal.", ephemeral=True)
         return
 
     guild_id = interaction.guild_id
     if not guild_id:
-        await interaction.response.send_message("ID do servidor não encontrado.", ephemeral=True)
+        await interaction.followup.send("ID do servidor não encontrado.", ephemeral=True)
         return
     
     voice_client = interaction.guild.voice_client if interaction.guild else None
     if voice_client and not isinstance(voice_client, discord.VoiceClient):
-        await interaction.response.send_message("Cliente de voz incompatível.", ephemeral=True)
+        await interaction.followup.send("Cliente de voz incompatível.", ephemeral=True)
         return
 
     manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
     if not isinstance(manager, SoundEffectListMemory):
-        await interaction.response.send_message("Bot ocupado com Jukebox.", ephemeral=False)
+        await interaction.followup.send("Bot ocupado com Jukebox.", ephemeral=False)
         return
 
     AUDIO_MANAGER.set_channel_id(guild_id, channel.id)
-    db.set_osaka_call_register(guild_id, channel.id, 1)
+    DB.set_osaka_call_register(guild_id, channel.id, 1)
 
     if voice_client and voice_client.is_connected():
         if voice_client.channel.id == channel.id:
-            await interaction.response.send_message(f"Já estou em {channel.mention}.", ephemeral=True)
+            await interaction.followup.send(f"Já estou em {channel.mention}.", ephemeral=True)
             return
         await voice_client.move_to(channel)
-        await interaction.response.send_message(f"Movido para {channel.mention}.")
+        await interaction.followup.send(f"Movido para {channel.mention}.")
 
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
         manager.update_audio_task(
-            bot.loop.create_task(play_audio_loop(voice_client, guild_id))
+            bot.loop.create_task(play_sound_effects_loop(voice_client, guild_id))
         )
         return
 
     voice_client = await channel.connect()
-    await interaction.response.send_message(f"Entrei em {channel.mention}.")
+    await interaction.followup.send(f"Entrei em {channel.mention}.")
     manager.update_audio_task(
-        bot.loop.create_task(play_audio_loop(voice_client, guild_id))
+        bot.loop.create_task(play_sound_effects_loop(voice_client, guild_id))
     )
 
 
@@ -569,7 +567,7 @@ async def call(interaction: discord.Interaction):
 async def disconnect(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client if interaction.guild else None
     guild_id = interaction.guild_id
-    db.set_osaka_call_register(guild_id, 0, 0)
+    DB.set_osaka_call_register(guild_id, 0, 0)
 
     if voice_client and not isinstance(voice_client, discord.VoiceClient):
         await interaction.response.send_message("Cliente de voz incompatível.", ephemeral=True)
@@ -613,117 +611,13 @@ async def reconnect(interaction: discord.Interaction):
     new_voice_client = await channel.connect()
     await interaction.response.send_message(f"Reconectado em {channel.mention}.")
     AUDIO_MANAGER.set_channel_id(guild_id, channel.id)
-    db.set_osaka_call_register(guild_id, channel.id, 1)
+    DB.set_osaka_call_register(guild_id, channel.id, 1)
     if isinstance(manager, SoundEffectListMemory):
         manager.update_audio_task(
-            bot.loop.create_task(play_audio_loop(new_voice_client, guild_id))
+            bot.loop.create_task(play_sound_effects_loop(new_voice_client, guild_id))
         )
     else:
         ...
-
-async def play_audio_loop(voice_client: discord.VoiceClient, guild_id: int):
-    try:
-        while voice_client.is_connected():
-            manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-            if not isinstance(manager, SoundEffectListMemory):
-                print(f"[Guild {guild_id}] Manager de áudio não encontrado, encerrando loop")
-                return
-            
-            if not voice_client.is_playing() and not voice_client.is_paused():
-                if manager.audio_event_is_set():
-                    manager.audio_event_clear()
-                audio_filepath = AUDIO_MANAGER.get_next_song(guild_id)
-                print(f"Caminho do áudio: {audio_filepath}")
-
-                finished = asyncio.Event()
-                def after_callback(error):
-                    if error:
-                        print(f"[Guild {guild_id}] Erro no áudio: {error}")
-                    bot.loop.call_soon_threadsafe(finished.set)
-                
-                try:
-                    audio_source = FFmpegOpusAudio(
-                        audio_filepath,
-                        executable=FFMPEG_PATH,
-                        before_options='-nostdin',
-                        options='-vn'
-                    )
-                    
-                    voice_client.play(audio_source, after=after_callback)
-                    print(f"[Guild {guild_id}] Tocando áudio...", audio_filepath)
-                    
-                    try:
-                        timeout = get_audio_duration(audio_filepath) + 10.0
-                        await asyncio.wait_for(finished.wait(), timeout=timeout)
-                    except asyncio.TimeoutError:
-                        print(f"[Guild {guild_id}] Timeout ao aguardar término do áudio")
-                        if voice_client.is_playing():
-                            voice_client.stop()
-                        continue
-                    db.set_osaka_ban_list(manager.guild_id, manager.audio_ban_list)
-                    await manager.await_event()
-                    
-                except Exception as audio_error:
-                    print(f"[Guild {guild_id}] Erro ao criar/tocar áudio: {audio_error}")
-                    await asyncio.sleep(2.0)
-                continue
-            await asyncio.sleep(2)
-    except asyncio.CancelledError:
-        print(f"[Guild {guild_id}] Loop de áudio cancelado")
-        if voice_client.is_playing():
-            voice_client.stop()
-        await asyncio.sleep(2)
-        raise
-    except discord.errors.ConnectionClosed as e:
-        print(f"[Guild {guild_id}] Conexão de voz fechada (code {e.code}): {e}")
-        AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-        await attempt_voice_reconnect(guild_id)
-    except Exception as e:
-        print(f"[Guild {guild_id}] Erro no loop de áudio: {e}")
-    finally:
-        if voice_client.is_playing():
-            voice_client.stop()
-        AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-        print(f"[Guild {guild_id}] Cleanup do áudio concluído")
-
-async def attempt_voice_reconnect(guild_id: int, max_retries: int = 3):
-    """Tenta reconectar ao canal de voz após desconexão"""
-    guild = bot.get_guild(guild_id)
-    if not guild: return
-    
-    manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-    
-    if not manager.channel_id or manager.channel_id < 1:
-        register = db.get_osaka_call_register(guild_id)
-        if not register or not register[1]:  # channel_id
-            print(f"[Guild {guild_id}] Sem canal registrado para reconexão")
-            return
-        AUDIO_MANAGER.set_channel_id(guild_id, register[1])
-    if not manager.channel_id or manager.channel_id < 1:
-        return
-    channel = guild.get_channel(manager.channel_id)
-    if not channel or not isinstance(channel, discord.VoiceChannel):
-        return
-    
-    for attempt in range(max_retries):
-        try:
-            print(f"[Guild {guild_id}] Tentativa de reconexão {attempt + 1}/{max_retries}")
-            await asyncio.sleep(2 ** attempt)  # Backoff exponencial
-            vc = await channel.connect()
-            print(f"[Guild {guild_id}] Reconectado com sucesso!")
-            if isinstance(manager, SoundEffectListMemory):
-                manager.update_audio_task(
-                    bot.loop.create_task(play_audio_loop(vc, guild_id))
-                )
-            else:
-                ...
-            return
-        except Exception as e:
-            print(f"[Guild {guild_id}] Falha na reconexão: {e}")
-
-    AUDIO_MANAGER.set_channel_id(guild_id, 0)
-    db.set_osaka_call_register(guild_id, 0, 0)  
-    print(f"[Guild {guild_id}] Falha ao reconectar após {max_retries} tentativas")
 
 @bot.tree.command(name="next-sound-effect", description="Pula para o próximo Efeito Sonoro")
 async def next_sound_effect(interaction: discord.Interaction):
@@ -760,7 +654,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
         print(f"[Guild {guild_id}] Bot movido de {before.channel.name} para {after.channel.name}")
         
         AUDIO_MANAGER.set_channel_id(guild_id, after.channel.id)
-        db.set_osaka_call_register(guild_id, after.channel.id, 1)
+        DB.set_osaka_call_register(guild_id, after.channel.id, 1)
         
         manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
         if manager.audio_tasks:
@@ -770,7 +664,34 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
         guild_id = member.guild.id
         print(f"[Guild {guild_id}] Bot foi desconectado/kickado de {before.channel.name}")
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-        db.set_osaka_call_register(guild_id, 0, 0)
+        DB.set_osaka_call_register(guild_id, 0, 0)
+
+async def display_audio_queue(song_entries: dict, interaction: discord.Interaction, ephemeral: bool = False):
+    title = song_entries.get("title", "Sem título")
+    webpage_url = song_entries.get("webpage_url", "")
+    channel = song_entries.get("channel", "Desconhecido")
+    duration = int(song_entries.get("duration") or 0)
+    thumbnails = song_entries.get("thumbnails", [])
+
+    hours, remainder = divmod(duration, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    duration_str = f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
+
+    thumbnail_url = thumbnails[-1].get("url") if thumbnails else None
+
+    embed = discord.Embed(
+        title=title,
+        url=webpage_url or None,
+        color=discord.Color.red()
+    )
+    embed.set_author(name=channel)
+    embed.add_field(name="Duração", value=duration_str, inline=True)
+    msg = "> Add queue" if ephemeral else "> play now"
+    embed.add_field(name="", value=msg, inline=True)
+    if thumbnail_url:
+        embed.set_thumbnail(url=thumbnail_url)
+
+    await interaction.followup.send(embed=embed, ephemeral=ephemeral)
 
 @bot.tree.command(name="play", description="Sons da plataforma vermelha.")
 @app_commands.describe(song_query="URL ou título da música a ser tocada")
@@ -778,76 +699,74 @@ async def play(interaction: discord.Interaction, song_query: str):
     await interaction.response.defer()
 
     if not interaction.guild:
-        await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
+        await interaction.followup.send("Este comando só pode ser usado em servidores.", ephemeral=True)
         return
     
     member = interaction.guild.get_member(interaction.user.id)
     if not member:
-        await interaction.response.send_message("Não foi possível encontrar suas informações no servidor.", ephemeral=True)
+        await interaction.followup.send("Não foi possível encontrar suas informações no servidor.", ephemeral=True)
         return
     
     voice_state = member.voice
     if not voice_state or not voice_state.channel:
-        await interaction.response.send_message("Você precisa estar em um canal de voz.", ephemeral=True)
+        await interaction.followup.send("Você precisa estar em um canal de voz.", ephemeral=True)
         return
 
     channel = voice_state.channel
     perms = channel.permissions_for(interaction.guild.me) if interaction.guild else None
     if perms and (not perms.connect or not perms.speak):
-        await interaction.response.send_message("Não tenho permissão para conectar/falar neste canal.", ephemeral=True)
+        await interaction.followup.send("Não tenho permissão para conectar/falar neste canal.", ephemeral=True)
         return
 
     guild_id = interaction.guild_id
     if not guild_id:
-        await interaction.response.send_message("ID do servidor não encontrado.", ephemeral=True)
+        await interaction.followup.send("ID do servidor não encontrado.", ephemeral=True)
         return
 
     voice_client = interaction.guild.voice_client if interaction.guild else None
     if voice_client and not isinstance(voice_client, discord.VoiceClient):
-        await interaction.response.send_message("Cliente de voz incompatível.", ephemeral=True)
+        await interaction.followup.send("Cliente de voz incompatível.", ephemeral=True)
         return
 
     AUDIO_MANAGER.set_audio_source(guild_id, "JUKEBOX")
     AUDIO_MANAGER.set_channel_id(guild_id, channel.id)
     manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
-    db.set_osaka_call_register(guild_id, channel.id, 1)
+    if not isinstance(manager, JukeboxListMemory):
+        await interaction.followup.send("Problema secreto da secreta.", ephemeral=True)
+        return
+    DB.set_osaka_call_register(guild_id, channel.id, 1)
+
+    if not manager.channel_id_msg:
+        manager.channel_id_msg = interaction.channel_id
 
     if voice_client and voice_client.is_connected():
-        if voice_client.channel.id == channel.id:
-            await interaction.response.send_message(f"Já estou em {channel.mention}.", ephemeral=True)
-            return
-        await voice_client.move_to(channel)
-        await interaction.response.send_message(f"Movido para {channel.mention}.")
+        if voice_client.channel.id != channel.id:
+            await voice_client.move_to(channel)
+            await interaction.followup.send(f"Movido para {channel.mention}.")
 
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
     else:
         voice_client = await channel.connect()
-        await interaction.response.send_message(f"Entrei em {channel.mention}.")
+        await interaction.followup.send(f"Entrei em {channel.mention}.")
 
-    
 
     # manager.update_audio_task(
     #     bot.loop.create_task(play_audio_loop(voice_client, guild_id))
     # )
+    query = f"ytsearch1:{song_query}"
 
+    tracks = await search_ytdlp_async(query)
 
+    if not tracks or len(tracks) < 1:
+        await interaction.followup.send("Nenhum resultado encontrado.")
+        return
+    
+    manager.add_song_to_queue(tracks[0])
+    await display_audio_queue(tracks[0], interaction, True)
+    if len(manager.queue) > 1:
+        await display_audio_queue(tracks[0], interaction, True)
+    
 
-
-
-    # ydl_options = {
-    #     "format": "bestaudio[abr<=96]/bestaudio",
-    #     "noplaylist": True,
-    #     "youtube_include_dash_manifest": False,
-    #     "youtube_include_hls_manifest": False,
-    # }
-
-    # query = "ytsearch1: " + song_query
-    # results = await search_ytdlp_async(query, ydl_options)
-    # tracks = results.get("entries", [])
-
-    # if tracks is None:
-    #     await interaction.followup.send("No results found.")
-    #     return
 
     # first_track = tracks[0]
     # audio_url = first_track["url"]

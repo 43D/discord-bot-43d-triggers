@@ -53,6 +53,9 @@ class AudioManager:
     def set_audio_source(self, audio_source: Literal["JUKEBOX", "SOUND_EFFECT"]):
         self.audio_source = audio_source
 
+    def check_audio_jukebox_empty(self) -> bool:
+        return self.jukebox.check_empty()
+
     @staticmethod
     def from_db(guild_id: int, channel_id: int, audio_ban_list: list[str], audio_source: Literal["JUKEBOX", "SOUND_EFFECT"] = "SOUND_EFFECT"):
         manager = AudioManager(
