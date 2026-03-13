@@ -7,6 +7,7 @@ class JukeboxListMemory:
     guild_id: int
     channel_id: int | None = None
     channel_id_msg: int | None = None
+    current_song: str = ""
     queue: deque = field(default_factory=deque)
     audio_tasks: Task | None = None
     audio_player_events: Event | None = None
@@ -44,6 +45,10 @@ class JukeboxListMemory:
     def delete_event(self):
         if self.audio_skip_events is not None:
             self.audio_skip_events = None
+            
+    def delete_player_event(self):
+        if self.audio_player_events is not None:
+            self.audio_player_events = None
 
     def audio_is_play(self) -> bool:
         if self.audio_player_events is None:
@@ -71,3 +76,21 @@ class JukeboxListMemory:
     
     def add_song_to_queue(self, song_entries: dict):
         self.queue.append(song_entries)
+        print(len(self.queue))
+
+    def get_next_song(self) -> dict | None:
+        if len(self.queue) == 0:
+            return None
+        return self.queue.popleft()
+    
+    def song_is_currently_playing(self, url: str) -> bool:
+        return self.current_song == url
+    
+    def song_is_in_queue(self, url: str) -> bool:
+        return any(song.get("id") == url for song in self.queue)
+
+    def finish(self):
+        self.queue.clear()
+        self.delete_audio_task()
+        self.delete_event()
+        self.delete_player_event()

@@ -111,6 +111,7 @@ class AudioListManager:
 
     def set_audio_source(self, guild_id: int, audio_source: Literal["JUKEBOX", "SOUND_EFFECT"]):
         m = self.get_by_guild_id(guild_id)
+        print(f"[Guild {guild_id}] Alterando fonte de áudio para: {audio_source}")
         m.set_audio_source(audio_source)
 
     @staticmethod

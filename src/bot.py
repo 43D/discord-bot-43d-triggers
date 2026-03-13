@@ -1,5 +1,4 @@
 import asyncio
-import os
 import re
 import aiohttp
 import discord
@@ -33,7 +32,7 @@ intents.messages = True
 intents.guilds = True
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
-from src.audio.AudioPlayer import play_sound_effects_loop
+from src.audio.AudioPlayer import play_sound_effects_loop, play_songs_yt_loop, display_audio_queue
 
 YDL_OPTS = {
     "format": "bestaudio/best",
@@ -92,7 +91,6 @@ async def check_reconnecting():
         try:
             vc = await channel.connect()
             print(f"[Reconectar] Conectado em guild={manager.guild_id} channel={channel_id}")
-            print(type(manager))
             if manager.check_audio_jukebox_empty():
                 manager.set_audio_source("SOUND_EFFECT")
 
@@ -102,7 +100,9 @@ async def check_reconnecting():
                     asyncio.create_task(play_sound_effects_loop(vc, manager.guild_id))
                 )
             elif isinstance(manager, JukeboxListMemory) and len(manager.queue) > 0:
-                ...
+                manager.update_audio_task(
+                    asyncio.create_task(play_songs_yt_loop(vc, manager.guild_id))
+                )
         except Exception as e:
             print(f"[Reconectar] Falha ao conectar em guild={manager.guild_id} channel={channel_id}: {e}")
 
@@ -550,17 +550,12 @@ async def call(interaction: discord.Interaction):
         await interaction.followup.send(f"Movido para {channel.mention}.")
 
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-        manager.update_audio_task(
-            bot.loop.create_task(play_sound_effects_loop(voice_client, guild_id))
-        )
-        return
-
-    voice_client = await channel.connect()
-    await interaction.followup.send(f"Entrei em {channel.mention}.")
+    else:
+        voice_client = await channel.connect()
+        await interaction.followup.send(f"Entrei em {channel.mention}.")
     manager.update_audio_task(
         bot.loop.create_task(play_sound_effects_loop(voice_client, guild_id))
     )
-
 
 @bot.tree.command(name="disconnect", description="Desconectar o bot do canal de voz")
 @app_commands.checks.has_permissions(administrator=True)
@@ -617,7 +612,9 @@ async def reconnect(interaction: discord.Interaction):
             bot.loop.create_task(play_sound_effects_loop(new_voice_client, guild_id))
         )
     else:
-        ...
+        manager.update_audio_task(
+            bot.loop.create_task(play_songs_yt_loop(new_voice_client, guild_id))
+        )
 
 @bot.tree.command(name="next-sound-effect", description="Pula para o próximo Efeito Sonoro")
 async def next_sound_effect(interaction: discord.Interaction):
@@ -666,33 +663,6 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
         DB.set_osaka_call_register(guild_id, 0, 0)
 
-async def display_audio_queue(song_entries: dict, interaction: discord.Interaction, ephemeral: bool = False):
-    title = song_entries.get("title", "Sem título")
-    webpage_url = song_entries.get("webpage_url", "")
-    channel = song_entries.get("channel", "Desconhecido")
-    duration = int(song_entries.get("duration") or 0)
-    thumbnails = song_entries.get("thumbnails", [])
-
-    hours, remainder = divmod(duration, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    duration_str = f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
-
-    thumbnail_url = thumbnails[-1].get("url") if thumbnails else None
-
-    embed = discord.Embed(
-        title=title,
-        url=webpage_url or None,
-        color=discord.Color.red()
-    )
-    embed.set_author(name=channel)
-    embed.add_field(name="Duração", value=duration_str, inline=True)
-    msg = "> Add queue" if ephemeral else "> play now"
-    embed.add_field(name="", value=msg, inline=True)
-    if thumbnail_url:
-        embed.set_thumbnail(url=thumbnail_url)
-
-    await interaction.followup.send(embed=embed, ephemeral=ephemeral)
-
 @bot.tree.command(name="play", description="Sons da plataforma vermelha.")
 @app_commands.describe(song_query="URL ou título da música a ser tocada")
 async def play(interaction: discord.Interaction, song_query: str):
@@ -739,47 +709,33 @@ async def play(interaction: discord.Interaction, song_query: str):
     if not manager.channel_id_msg:
         manager.channel_id_msg = interaction.channel_id
 
-    if voice_client and voice_client.is_connected():
-        if voice_client.channel.id != channel.id:
-            await voice_client.move_to(channel)
-            await interaction.followup.send(f"Movido para {channel.mention}.")
-
-        AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-    else:
-        voice_client = await channel.connect()
-        await interaction.followup.send(f"Entrei em {channel.mention}.")
-
-
-    # manager.update_audio_task(
-    #     bot.loop.create_task(play_audio_loop(voice_client, guild_id))
-    # )
     query = f"ytsearch1:{song_query}"
-
     tracks = await search_ytdlp_async(query)
 
     if not tracks or len(tracks) < 1:
         await interaction.followup.send("Nenhum resultado encontrado.")
         return
     
+    url = tracks[0].get("id")
+    if manager.song_is_currently_playing(url) or manager.song_is_in_queue(url):
+        await interaction.followup.send("A música solicitada já está tocando ou na fila.", ephemeral=True)
+        return
+    
     manager.add_song_to_queue(tracks[0])
     await display_audio_queue(tracks[0], interaction, True)
-    if len(manager.queue) > 1:
-        await display_audio_queue(tracks[0], interaction, True)
+
+    isPlaying = manager.audio_tasks is not None
+    if voice_client and voice_client.is_connected():
+        if voice_client.channel.id != channel.id:
+            await voice_client.move_to(channel)
+            await interaction.followup.send(f"Movido para {channel.mention}.")
+    else:
+        voice_client = await channel.connect()
+        await interaction.followup.send(f"Entrei em {channel.mention}.")
     
-
-
-    # first_track = tracks[0]
-    # audio_url = first_track["url"]
-    # title = first_track.get("title", "Untitled")
-
-    # guild_id = str(interaction.guild_id)
-    # if SONG_QUEUES.get(guild_id) is None:
-    #     SONG_QUEUES[guild_id] = deque()
-
-    # SONG_QUEUES[guild_id].append((audio_url, title))
-
-    # if voice_client.is_playing() or voice_client.is_paused():
-    #     await interaction.followup.send(f"Added to queue: **{title}**")
-    # else:
-    #     await interaction.followup.send(f"Now playing: **{title}**")
-    #     await play_next_song(voice_client, guild_id, interaction.channel)
+    await display_audio_queue(tracks[0], interaction, True)
+    if not isPlaying:
+        manager.update_audio_task(
+            bot.loop.create_task(play_songs_yt_loop(voice_client, guild_id))
+        )
+    
