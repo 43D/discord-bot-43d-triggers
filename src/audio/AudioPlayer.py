@@ -149,7 +149,8 @@ async def play_songs_yt_loop(voice_client: discord.VoiceClient, guild_id: int):
                 if not song_entries:
                     manager.finish()
                     AUDIO_MANAGER.set_audio_source(guild_id, "SOUND_EFFECT")
-                    return
+                    break
+
                 is_playlist = song_entries.get("bot_playing", False)
                 if is_playlist:
                     res = await search_ytdlp_async(f"ytsearch1:{song_entries['id']}")
@@ -201,12 +202,12 @@ async def play_songs_yt_loop(voice_client: discord.VoiceClient, guild_id: int):
         if gerencia.audio_source == "JUKEBOX":
             if voice_client.is_playing():
                 voice_client.stop()
-            print(f"dsfdsfdssdaasdasdasdfsdf")
             AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
             if manager and isinstance(manager, JukeboxListMemory):
                 manager.finish()
             AUDIO_MANAGER.set_audio_source(guild_id, "SOUND_EFFECT")
             print(f"[Guild {guild_id}] Cleanup do áudio concluído")
+            await attempt_voice_reconnect(guild_id)
 
 async def display_audio_queue(song_entries: dict, interaction: discord.Interaction | None, ephemeral: bool = False, guild_id: int | None = None, channel_id: int | None = None):
     title = song_entries.get("title", "Sem título")
