@@ -14,6 +14,7 @@ from src.util.ProcessMensage import ProcessMensage
 from src.util.ProcessOsaka import ProcessOsaka
 import sys
 import yt_dlp
+from urllib.parse import urlparse, parse_qs
 
 DB = RegrasDB()
 
@@ -95,6 +96,7 @@ async def check_reconnecting():
                 manager.set_audio_source("SOUND_EFFECT")
 
             mm = manager.get_manager()
+            print("check_reconnecting: reiniciando loop de áudio da jukebox")
             if isinstance(mm, SoundEffectListMemory):
                 mm.update_audio_task(
                     asyncio.create_task(play_sound_effects_loop(vc, manager.guild_id))
@@ -548,11 +550,12 @@ async def call(interaction: discord.Interaction):
             return
         await voice_client.move_to(channel)
         await interaction.followup.send(f"Movido para {channel.mention}.")
-
+        print("Call: move")
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
     else:
         voice_client = await channel.connect()
         await interaction.followup.send(f"Entrei em {channel.mention}.")
+    print("Call")
     manager.update_audio_task(
         bot.loop.create_task(play_sound_effects_loop(voice_client, guild_id))
     )
@@ -575,7 +578,7 @@ async def disconnect(interaction: discord.Interaction):
     if not guild_id:
         await interaction.response.send_message("ID do servidor não encontrado.", ephemeral=True)
         return
-
+    print("Disconnect: desconectando do canal de voz, asas")
     AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
     await voice_client.disconnect()
     await interaction.response.send_message("Desconectado do canal de voz.")
@@ -599,6 +602,7 @@ async def reconnect(interaction: discord.Interaction):
         return
     
     manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
+    print("reconnect: delete - desconectando para reconectar no mesmo canal, ")
     manager.delete_audio_task()
     await voice_client.disconnect()
     await asyncio.sleep(1.0)
@@ -607,6 +611,7 @@ async def reconnect(interaction: discord.Interaction):
     await interaction.response.send_message(f"Reconectado em {channel.mention}.")
     AUDIO_MANAGER.set_channel_id(guild_id, channel.id)
     DB.set_osaka_call_register(guild_id, channel.id, 1)
+    print("reconnect: reiniciando loop de áudio da jukebox")
     if isinstance(manager, SoundEffectListMemory):
         manager.update_audio_task(
             bot.loop.create_task(play_sound_effects_loop(new_voice_client, guild_id))
@@ -663,6 +668,39 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
         DB.set_osaka_call_register(guild_id, 0, 0)
 
+def get_yt_url_id(texto: str) -> str:
+    valor = texto.strip()
+    if not valor:
+        return valor
+
+    candidato = valor
+    if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", candidato):
+        if not candidato.startswith(("youtube.com/", "www.youtube.com/", "m.youtube.com/", "music.youtube.com/", "youtu.be/")):
+            return valor
+        candidato = "https://" + candidato
+
+    try:
+        parsed = urlparse(candidato)
+        host = (parsed.netloc or "").lower()
+        path = parsed.path or ""
+
+        if host in {"youtu.be", "www.youtu.be"}:
+            vid = path.lstrip("/").split("/")[0]
+            return vid if vid else valor
+
+        if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"}:
+            if path == "/watch":
+                vid = parse_qs(parsed.query).get("v", [None])[0]
+                return vid if vid else valor
+
+            if path.startswith("/shorts/"):
+                vid = path.split("/shorts/", 1)[1].split("/", 1)[0]
+                return vid if vid else valor
+
+        return valor
+    except Exception:
+        return valor
+
 @bot.tree.command(name="play", description="Sons da plataforma vermelha.")
 @app_commands.describe(song_query="URL ou título da música a ser tocada")
 async def play(interaction: discord.Interaction, song_query: str):
@@ -709,6 +747,7 @@ async def play(interaction: discord.Interaction, song_query: str):
     if not manager.channel_id_msg:
         manager.channel_id_msg = interaction.channel_id
 
+    song_query = get_yt_url_id(song_query)
     query = f"ytsearch1:{song_query}"
     tracks = await search_ytdlp_async(query)
 
@@ -735,6 +774,7 @@ async def play(interaction: discord.Interaction, song_query: str):
     
     await display_audio_queue(tracks[0], interaction, True)
     if not isPlaying:
+        print("play: iniciando loop de áudio da jukebox")
         manager.update_audio_task(
             bot.loop.create_task(play_songs_yt_loop(voice_client, guild_id))
         )
