@@ -20,7 +20,6 @@ async def search_ytdlp_async(query, playlist=False):
             "noplaylist": False,
             "lazy_playlist": True,
             "extract_flat": "in_playlist",
-            "playlistend": 30,
             "ignoreerrors": True
         })
 

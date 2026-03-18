@@ -7,8 +7,8 @@ class JukeboxListMemory:
     guild_id: int
     channel_id: int | None = None
     channel_id_msg: int | None = None
-    current_song: str = ""
     queue: deque = field(default_factory=deque)
+    current_song: dict = field(default_factory=dict)
     audio_tasks: Task | None = None
     audio_player_events: Event | None = None
     audio_skip_events: Event | None = None
@@ -86,7 +86,7 @@ class JukeboxListMemory:
         return self.queue.popleft()
     
     def song_is_currently_playing(self, url: str) -> bool:
-        return self.current_song == url
+        return self.current_song.get("id", "no-audio") == url
     
     def song_is_in_queue(self, url: str) -> bool:
         return any(song.get("id") == url for song in self.queue)

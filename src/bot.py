@@ -1,4 +1,5 @@
 import asyncio
+from random import shuffle as shuffle_r, randint
 import re
 import aiohttp
 import discord
@@ -767,3 +768,122 @@ async def play(interaction: discord.Interaction, song_query: str):
             bot.loop.create_task(play_songs_yt_loop(voice_client, guild_id))
         )
     
+@bot.tree.command(name="shuffle", description="Aleatoriza a fila de músicas da plataforma vermelha.")
+async def shuffle(interaction: discord.Interaction):
+    if not interaction.guild:
+        await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
+        return
+    
+    guild_id = interaction.guild_id
+    if not guild_id:
+        await interaction.followup.send("ID do servidor não encontrado.", ephemeral=True)
+        return
+
+    manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
+    if not isinstance(manager, JukeboxListMemory):
+        await interaction.response.send_message("Este comando só pode ser usado quando o bot estiver em modo de Jukebox.", ephemeral=True)
+        return
+    
+    if len(manager.queue) < 2:
+        await interaction.response.send_message("É necessário ter pelo menos 2 músicas na fila para embaralhar.", ephemeral=True)
+        return
+    
+    current_song = manager.current_song
+    for _ in range(0, randint(2, 15)):
+        shuffle_r(manager.queue)
+
+    if current_song:
+        manager.queue.insert(0, current_song)
+
+    await interaction.response.send_message("Fila embaralhada!", ephemeral=False)
+
+@bot.tree.command(name="clear_queue", description="Limpa a fila de músicas da plataforma vermelha.")
+async def clear_queue(interaction: discord.Interaction):
+    if not interaction.guild:
+        await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
+        return
+    
+    guild_id = interaction.guild_id
+    if not guild_id:
+        await interaction.followup.send("ID do servidor não encontrado.", ephemeral=True)
+        return
+
+    manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
+    if not isinstance(manager, JukeboxListMemory):
+        await interaction.response.send_message("Este comando só pode ser usado quando o bot estiver em modo de Jukebox.", ephemeral=True)
+        return
+    
+    AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
+    await interaction.response.send_message("Fila limpa e bot desconectado do canal de voz.", ephemeral=False)
+
+@bot.tree.command(name="queue", description="Mostra a fila de músicas da plataforma vermelha.")
+async def queue(interaction: discord.Interaction):
+    if not interaction.guild:
+        await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
+        return
+    
+    guild_id = interaction.guild_id
+    if not guild_id:
+        await interaction.followup.send("ID do servidor não encontrado.", ephemeral=True)
+        return
+
+    manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
+    if not isinstance(manager, JukeboxListMemory):
+        await interaction.response.send_message("Este comando só pode ser usado quando o bot estiver em modo de Jukebox.", ephemeral=True)
+        return
+    
+    if not manager.current_song and len(manager.queue) == 0:
+        await interaction.response.send_message("Nenhuma música está tocando e a fila está vazia.", ephemeral=True)
+        return
+    
+    embed = discord.Embed(title="Fila de Músicas da Plataforma Vermelha", color=discord.Color.red())
+    if manager.current_song:
+        embed.add_field(name="Tocando Agora", value=f"**{manager.current_song.get('title', 'Título Desconecido')}**", inline=False)
+
+    if len(manager.queue) > 0:
+        queue_list = ""
+        for idx, song in enumerate(list(manager.queue)[:10]):
+            queue_list += f"**{idx + 1}. {song.get('title', 'Título Desconecido')}**\n"
+        if len(manager.queue) > 10:
+            queue_list += f"...e mais {len(manager.queue) - 10} músicas na fila."
+        embed.add_field(name="Próximas na Fila", value=queue_list, inline=False)
+
+    await interaction.response.send_message(embed=embed, ephemeral=False)
+
+@bot.tree.command(name="skip", description="Pula para a próxima música da plataforma vermelha.")
+async def skip(interaction: discord.Interaction):
+    if not interaction.guild:
+        await interaction.response.send_message("Este comando só pode ser usado em servidores.", ephemeral=True)
+        return
+    
+    guild_id = interaction.guild_id
+    if not guild_id:
+        await interaction.followup.send("ID do servidor não encontrado.", ephemeral=True)
+        return
+
+    manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
+    if not isinstance(manager, JukeboxListMemory):
+        await interaction.response.send_message("Este comando só pode ser usado quando o bot estiver em modo de Jukebox.", ephemeral=True)
+        return
+    
+    if not manager.current_song and len(manager.queue) == 0:
+        await interaction.response.send_message("Nenhuma música está tocando e a fila está vazia.", ephemeral=True)
+        return
+
+    voice_client = interaction.guild.voice_client if interaction.guild else None
+    if not isinstance(voice_client, discord.VoiceClient) or not voice_client.is_connected():
+        await interaction.response.send_message("Não estou conectado em um canal de voz.", ephemeral=True)
+        return
+    
+    if not voice_client or not voice_client.is_connected():
+        await interaction.response.send_message("Não estou conectado em um canal de voz.", ephemeral=True)
+        return
+
+    if voice_client.is_paused():
+        voice_client.resume()
+
+    if voice_client.is_playing():
+        voice_client.stop()
+        await interaction.response.send_message("Pulando para a próxima música...", ephemeral=False)
+    else:
+        await interaction.response.send_message("Não há música tocando no momento.", ephemeral=True)

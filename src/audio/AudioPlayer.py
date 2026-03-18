@@ -166,13 +166,12 @@ async def play_songs_yt_loop(voice_client: discord.VoiceClient, guild_id: int):
                         before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
                         options='-vn'
                     )
-                    manager.current_song = song_entries['id']
+                    manager.current_song = song_entries
                     voice_client.play(audio_source, after=after_callback)
                     print(f"[Guild {guild_id}] Tocando áudio...", webpage_url)
                     try:
                         await display_audio_queue(song_entries, None, False, guild_id, current_manager.channel_id_msg)
                         await current_manager.audio_player_await(float(song_entries.get("duration") or 0))
-                        print("set")
                     except asyncio.TimeoutError:
                         print(f"[Guild {guild_id}] Timeout ao aguardar término do áudio")
                         if voice_client.is_playing():
