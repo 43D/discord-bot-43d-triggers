@@ -5,6 +5,7 @@ from src.util.AudioUtils import get_audio_duration
 from src.entity.SoundEffectListMemory import SoundEffectListMemory
 from src.entity.JukeboxListMemory import JukeboxListMemory
 from src.bot import AUDIO_MANAGER, bot, DB
+from src.util.YoutubeApi import search_ytdlp_async
 
 FFMPEG_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg').replace('src/audio/', '').replace('src\\audio\\', '')
 if os.name == 'nt':  # Windows
@@ -149,6 +150,13 @@ async def play_songs_yt_loop(voice_client: discord.VoiceClient, guild_id: int):
                     manager.finish()
                     AUDIO_MANAGER.set_audio_source(guild_id, "SOUND_EFFECT")
                     return
+                is_playlist = song_entries.get("bot_playing", False)
+                if is_playlist:
+                    res = await search_ytdlp_async(f"ytsearch1:{song_entries['id']}")
+                    if not res or len(res) < 1:
+                        print(f"[Guild {guild_id}] Nenhum resultado encontrado para {song_entries['id']}")
+                        continue
+                    song_entries = res[0]
                 url = song_entries['url']
                 webpage_url = song_entries.get("webpage_url", "")
                 try:

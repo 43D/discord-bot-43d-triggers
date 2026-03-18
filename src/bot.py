@@ -12,8 +12,8 @@ from src.database.db import RegrasDB, MessagesDB
 from src.mapas.mapa import mapa_links_padrao
 from src.util.ProcessMensage import ProcessMensage
 from src.util.ProcessOsaka import ProcessOsaka
+from src.util.YoutubeApi import search_ytdlp_async
 import sys
-import yt_dlp
 from urllib.parse import urlparse, parse_qs
 
 DB = RegrasDB()
@@ -34,13 +34,6 @@ intents.guilds = True
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 from src.audio.AudioPlayer import play_sound_effects_loop, play_songs_yt_loop, display_audio_queue
-
-YDL_OPTS = {
-    "format": "bestaudio/best",
-    "noplaylist": True,
-    "youtube_include_dash_manifest": False,
-    "youtube_include_hls_manifest": False,
-}
 
 async def stdin_listener():
     """Listener simples de stdin: imprime cada linha lida."""
@@ -107,15 +100,6 @@ async def check_reconnecting():
                 )
         except Exception as e:
             print(f"[Reconectar] Falha ao conectar em guild={manager.guild_id} channel={channel_id}: {e}")
-
-async def search_ytdlp_async(query):
-    def extract(query):
-        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl: # type: ignore
-            return ydl.extract_info(query, download=False)
-        
-    loop = asyncio.get_running_loop()
-    res =  await loop.run_in_executor(None, lambda: extract(query))
-    return res.get("entries", [])
 
     
 @bot.event
@@ -747,21 +731,25 @@ async def play(interaction: discord.Interaction, song_query: str):
     if not manager.channel_id_msg:
         manager.channel_id_msg = interaction.channel_id
 
-    song_query = get_yt_url_id(song_query)
-    query = f"ytsearch1:{song_query}"
-    tracks = await search_ytdlp_async(query)
+    is_playlist = "list=" in song_query or "/playlist" in song_query
+    query =  song_query if is_playlist else f"ytsearch1:{song_query}"
+    tracks = await search_ytdlp_async(query, is_playlist)
 
     if not tracks or len(tracks) < 1:
         await interaction.followup.send("Nenhum resultado encontrado.")
         return
     
     url = tracks[0].get("id")
-    if manager.song_is_currently_playing(url) or manager.song_is_in_queue(url):
-        await interaction.followup.send("A música solicitada já está tocando ou na fila.", ephemeral=True)
-        return
-    
-    manager.add_song_to_queue(tracks[0])
+    for track in tracks:
+        url = track.get("id")
+        if manager.song_is_currently_playing(url) or manager.song_is_in_queue(url):
+            await interaction.followup.send("A música solicitada já está tocando ou na fila.", ephemeral=True)
+            return
+        
     await display_audio_queue(tracks[0], interaction, True)
+    for track in tracks:
+        track['bot_playing'] = is_playlist
+        manager.add_song_to_queue(track)
 
     isPlaying = manager.audio_tasks is not None
     if voice_client and voice_client.is_connected():
