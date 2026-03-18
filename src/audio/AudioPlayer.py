@@ -36,6 +36,7 @@ async def attempt_voice_reconnect(guild_id: int, max_retries: int = 3):
             await asyncio.sleep(2 ** attempt)  # Backoff exponencial
             vc = await channel.connect()
             print(f"[Guild {guild_id}] Reconectado com sucesso!")
+            print("attempt_voice_reconnect")
             if isinstance(manager, SoundEffectListMemory):
                 manager.update_audio_task(
                     bot.loop.create_task(play_sound_effects_loop(vc, guild_id))
@@ -54,7 +55,7 @@ async def attempt_voice_reconnect(guild_id: int, max_retries: int = 3):
 
 async def play_sound_effects_loop(voice_client: discord.VoiceClient, guild_id: int):
     try:
-        while voice_client.is_connected():
+        while voice_client.is_connected() and AUDIO_MANAGER.get_audio_source(guild_id) == "SOUND_EFFECT":
             manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
             if not isinstance(manager, SoundEffectListMemory):
                 print(f"[Guild {guild_id}] Manager de áudio não encontrado, encerrando loop")
@@ -107,25 +108,28 @@ async def play_sound_effects_loop(voice_client: discord.VoiceClient, guild_id: i
         await asyncio.sleep(2)
         raise
     except discord.errors.ConnectionClosed as e:
-        print(f"[Guild {guild_id}] Conexão de voz fechada (code {e.code}): {e}")
+        print(f"[Guild {guild_id}] ==Conexão de voz fechada (code {e.code}): {e}")
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
         await attempt_voice_reconnect(guild_id)
     except Exception as e:
         print(f"[Guild {guild_id}] Erro no loop de áudio: {e}")
     finally:
-        if voice_client.is_playing():
-            voice_client.stop()
-        AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-        print(f"[Guild {guild_id}] Cleanup do áudio concluído")
+        print(f"[Guild {guild_id}] Cleanup do áudio concluídowasdssadasd")
+        manager = AUDIO_MANAGER.get_by_guild_id(guild_id)
+        if manager.audio_source == "SOUND_EFFECT":
+            if voice_client.is_playing():
+                voice_client.stop()
+            AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
+            print(f"[Guild {guild_id}] Cleanup do áudio concluído")
 
 async def play_songs_yt_loop(voice_client: discord.VoiceClient, guild_id: int):
+    manager = None
     try:
-        while voice_client.is_connected():
+        while voice_client.is_connected() and AUDIO_MANAGER.get_audio_source(guild_id) == "JUKEBOX":
             await asyncio.sleep(2)
             manager = AUDIO_MANAGER.get_manager_by_guild_id(guild_id)
             if not isinstance(manager, JukeboxListMemory):
                 print(f"[Guild {guild_id}] Manager de áudio não encontrado, encerrando loop2")
-                breakpoint()
                 return
             current_manager = manager
 
@@ -171,11 +175,13 @@ async def play_songs_yt_loop(voice_client: discord.VoiceClient, guild_id: int):
                     await asyncio.sleep(2.0)
                 continue
 
-    except asyncio.CancelledError:
+    except asyncio.CancelledError as e:
+        print(e)
         print(f"[Guild {guild_id}] Loop de áudio cancelado")
         raise
     except discord.errors.ConnectionClosed as e:
         print(f"[Guild {guild_id}] Conexão de voz fechada (code {e.code}): {e}")
+        print(f"dsfdsfdsfsdf")
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
         if manager and isinstance(manager, JukeboxListMemory):
             manager.finish()
@@ -188,6 +194,7 @@ async def play_songs_yt_loop(voice_client: discord.VoiceClient, guild_id: int):
         if gerencia.audio_source == "JUKEBOX":
             if voice_client.is_playing():
                 voice_client.stop()
+            print(f"dsfdsfdssdaasdasdasdfsdf")
             AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
             if manager and isinstance(manager, JukeboxListMemory):
                 manager.finish()

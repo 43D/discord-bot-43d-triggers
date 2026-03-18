@@ -19,6 +19,7 @@ class AudioManager:
 
     def delete_manager(self):
         data = self.jukebox if self.audio_source == "JUKEBOX" else self.sound_effects
+        print(f"[Guild {self.guild_id}] Deletando manager de áudio")
         data.delete_event()
         data.delete_audio_task()
 
@@ -101,6 +102,7 @@ class AudioListManager:
         return m.get_manager()
 
     def delete_manager_by_guild_id(self, guild_id: int):
+        print(f"[Guild {guild_id}] Deletando manager de áudio 222")
         self.get_by_guild_id(guild_id).delete_manager()
 
     def set_channel_id(self, guild_id: int, channel_id: int):
@@ -113,6 +115,10 @@ class AudioListManager:
         m = self.get_by_guild_id(guild_id)
         print(f"[Guild {guild_id}] Alterando fonte de áudio para: {audio_source}")
         m.set_audio_source(audio_source)
+
+    def get_audio_source(self, guild_id: int) -> Literal["JUKEBOX", "SOUND_EFFECT"]:
+        m = self.get_by_guild_id(guild_id)
+        return m.audio_source
 
     @staticmethod
     def from_db(lista: list[tuple[int, int, int]]):

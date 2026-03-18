@@ -19,6 +19,7 @@ class JukeboxListMemory:
 
     def update_audio_task(self, task: Task):
         if self.audio_tasks is not None:
+            print("Cancelando tarefa de áudio existente")
             self.audio_tasks.cancel()
         self.audio_tasks = task
 
@@ -39,6 +40,7 @@ class JukeboxListMemory:
 
     def delete_audio_task(self):
         if self.audio_tasks is not None:
+            print("Cancelando tarefa de áudio")
             self.audio_tasks.cancel()
             self.audio_tasks = None
             
