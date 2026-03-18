@@ -8,8 +8,6 @@ from src.bot import AUDIO_MANAGER, bot, DB
 from src.util.YoutubeApi import search_ytdlp_async
 
 FFMPEG_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg').replace('src/audio/', '').replace('src\\audio\\', '')
-if os.name == 'nt':  # Windows
-    FFMPEG_PATH += '.exe'
 print(FFMPEG_PATH)
 
 async def attempt_voice_reconnect(guild_id: int, max_retries: int = 3):
@@ -74,7 +72,7 @@ async def play_sound_effects_loop(voice_client: discord.VoiceClient, guild_id: i
 
                 audio_filepath = AUDIO_MANAGER.get_next_song(guild_id)
                 print(f"Caminho do áudio: {audio_filepath}")
-                
+
                 try:
                     audio_source = discord.FFmpegOpusAudio(
                         audio_filepath,
