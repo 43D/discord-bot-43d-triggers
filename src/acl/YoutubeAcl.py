@@ -4,14 +4,12 @@ import yt_dlp
 from copy import deepcopy
 from src.entity.YouTube.YouTubeEntity import YouTubeMetadata, YouTubeMetadataLazy
 
-cookie_file = os.getenv("YTDLP_COOKIE_FILE", "").strip()
 COOCKIE_FILE = os.path.join(os.path.dirname(__file__), 'cookies.txt').replace('src/acl/', '').replace('src\\acl\\', '')
+print(COOCKIE_FILE)
 
 YDL_OPTS = {
     "format": "bestaudio/best",
     "noplaylist": True,
-    "youtube_include_dash_manifest": False,
-    "youtube_include_hls_manifest": False,
     "ignoreerrors":True,
     "quiet":True,
     "no_warnings":True,
