@@ -649,6 +649,15 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
     elif before.channel and not after.channel:
         guild_id = member.guild.id
         print(f"[Guild {guild_id}] Bot foi desconectado/kickado de {before.channel.name}")
+        
+        await asyncio.sleep(30)  # espera 30 segundos para evitar reconexões rápidas
+        current_vc = member.guild.voice_client
+        if (current_vc and isinstance(current_vc, discord.VoiceClient) and current_vc.is_connected() and current_vc.channel is not None ):
+            print(f"[Guild {guild_id}] Reconexão detectada em {current_vc.channel.name}; mantendo estado de áudio.")
+            AUDIO_MANAGER.set_channel_id(guild_id, current_vc.channel.id)
+            DB.set_osaka_call_register(guild_id, current_vc.channel.id, 1)
+            return
+        print(f"[Guild {guild_id}] Desconexão confirmada; limpando estado de áudio.")
         AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
         DB.set_osaka_call_register(guild_id, 0, 0)
 
