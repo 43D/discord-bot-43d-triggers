@@ -40,7 +40,6 @@ async def stdin_listener():
     """Listener simples de stdin: imprime cada linha lida."""
     loop = asyncio.get_running_loop()
     print("stdin listener iniciado")
-    return
     while True:
         try:
             line = await loop.run_in_executor(None, sys.stdin.readline)
