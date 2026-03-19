@@ -8,12 +8,13 @@ COOCKIE_FILE = os.path.join(os.path.dirname(__file__), 'cookies.txt').replace('s
 print(COOCKIE_FILE)
 
 YDL_OPTS = {
-    "format": "bestaudio/best",
+    "format": "bestaudio*/bestaudio/best",
     "noplaylist": True,
     "ignoreerrors":True,
     "quiet":True,
     "no_warnings":True,
-    "cookiefile": COOCKIE_FILE
+    "cookiefile": COOCKIE_FILE,
+    "extractor_args": {"youtube": {"player_client": ["android", "web", "mweb", "web_safari"]}}
 }
 
 async def search_ytdlp_async(query, playlist=False):
