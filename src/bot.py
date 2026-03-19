@@ -13,7 +13,7 @@ from src.database.db import RegrasDB, MessagesDB
 from src.mapas.mapa import mapa_links_padrao
 from src.util.ProcessMensage import ProcessMensage
 from src.util.ProcessOsaka import ProcessOsaka
-from src.util.YoutubeApi import search_ytdlp_async
+from src.acl.YoutubeAcl import search_ytdlp_async
 import sys
 from urllib.parse import urlparse, parse_qs
 
@@ -740,17 +740,14 @@ async def play(interaction: discord.Interaction, song_query: str):
         await interaction.followup.send("Nenhum resultado encontrado.")
         return
     
-    url = tracks[0].get("id")
     for track in tracks:
-        url = track.get("id")
+        url = track.id
         if manager.song_is_currently_playing(url) or manager.song_is_in_queue(url):
             await interaction.followup.send("A música solicitada já está tocando ou na fila.", ephemeral=True)
             return
         
     await display_audio_queue(tracks[0], interaction, True)
-    for track in tracks:
-        track['bot_playing'] = is_playlist
-        manager.add_song_to_queue(track)
+    [manager.add_song_to_queue(track) for track in tracks]
 
     isPlaying = manager.audio_tasks is not None
     if voice_client and voice_client.is_connected():
@@ -838,12 +835,12 @@ async def queue(interaction: discord.Interaction):
     
     embed = discord.Embed(title="Fila de Músicas da Plataforma Vermelha", color=discord.Color.red())
     if manager.current_song:
-        embed.add_field(name="Tocando Agora", value=f"**{manager.current_song.get('title', 'Título Desconecido')}**", inline=False)
+        embed.add_field(name="Tocando Agora", value=f"**{manager.current_song.title}**", inline=False)
 
     if len(manager.queue) > 0:
         queue_list = ""
         for idx, song in enumerate(list(manager.queue)[:10]):
-            queue_list += f"**{idx + 1}. {song.get('title', 'Título Desconecido')}**\n"
+            queue_list += f"**{idx + 1}. {song.title}**\n"
         if len(manager.queue) > 10:
             queue_list += f"...e mais {len(manager.queue) - 10} músicas na fila."
         embed.add_field(name="Próximas na Fila", value=queue_list, inline=False)

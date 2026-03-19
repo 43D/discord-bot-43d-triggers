@@ -1,11 +1,12 @@
 import asyncio
 import os
 import discord
+from src.entity.YouTube.YouTubeEntity import YouTubeMetadata, YouTubeMetadataLazy
 from src.util.AudioUtils import get_audio_duration
 from src.entity.SoundEffectListMemory import SoundEffectListMemory
 from src.entity.JukeboxListMemory import JukeboxListMemory
 from src.bot import AUDIO_MANAGER, bot, DB
-from src.util.YoutubeApi import search_ytdlp_async
+from src.acl.YoutubeAcl import search_ytdlp_async
 
 FFMPEG_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg').replace('src/audio/', '').replace('src\\audio\\', '')
 print(FFMPEG_PATH)
@@ -148,29 +149,27 @@ async def play_songs_yt_loop(voice_client: discord.VoiceClient, guild_id: int):
                     manager.finish()
                     AUDIO_MANAGER.set_audio_source(guild_id, "SOUND_EFFECT")
                     break
-
-                is_playlist = song_entries.get("bot_playing", False)
-                if is_playlist:
-                    res = await search_ytdlp_async(f"ytsearch1:{song_entries['id']}")
+                
+                if isinstance(song_entries, YouTubeMetadataLazy):
+                    res = await search_ytdlp_async(f"ytsearch1:{song_entries.id}")
                     if not res or len(res) < 1:
-                        print(f"[Guild {guild_id}] Nenhum resultado encontrado para {song_entries['id']}")
+                        print(f"[Guild {guild_id}] Nenhum resultado encontrado para {song_entries.id}")
                         continue
                     song_entries = res[0]
-                url = song_entries['url']
-                webpage_url = song_entries.get("webpage_url", "")
+
                 try:
                     audio_source = discord.FFmpegOpusAudio(
-                        url,
+                        song_entries.url,
                         executable=FFMPEG_PATH,
                         before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
                         options='-vn'
                     )
                     manager.current_song = song_entries
                     voice_client.play(audio_source, after=after_callback)
-                    print(f"[Guild {guild_id}] Tocando áudio...", webpage_url)
+                    print(f"[Guild {guild_id}] Tocando áudio...", song_entries.webpage_url if isinstance(song_entries, YouTubeMetadata) else song_entries.url)
                     try:
                         await display_audio_queue(song_entries, None, False, guild_id, current_manager.channel_id_msg)
-                        await current_manager.audio_player_await(float(song_entries.get("duration") or 0))
+                        await current_manager.audio_player_await(float(song_entries.duration or 0))
                     except asyncio.TimeoutError:
                         print(f"[Guild {guild_id}] Timeout ao aguardar término do áudio")
                         if voice_client.is_playing():
@@ -207,30 +206,25 @@ async def play_songs_yt_loop(voice_client: discord.VoiceClient, guild_id: int):
             print(f"[Guild {guild_id}] Cleanup do áudio concluído")
             await attempt_voice_reconnect(guild_id)
 
-async def display_audio_queue(song_entries: dict, interaction: discord.Interaction | None, ephemeral: bool = False, guild_id: int | None = None, channel_id: int | None = None):
-    title = song_entries.get("title", "Sem título")
-    webpage_url = song_entries.get("webpage_url", "")
-    channel = song_entries.get("channel", "Desconhecido")
-    duration = int(song_entries.get("duration") or 0)
-    thumbnails = song_entries.get("thumbnails", [])
+async def display_audio_queue(song_entries: YouTubeMetadata | YouTubeMetadataLazy, interaction: discord.Interaction | None, ephemeral: bool = False, guild_id: int | None = None, channel_id: int | None = None):
+    webpage_url = song_entries.webpage_url if isinstance(song_entries, YouTubeMetadata) else song_entries.url
+    thumbnail_URL = song_entries.thumbnails[-1].url if song_entries.thumbnails else None
 
-    hours, remainder = divmod(duration, 3600)
+    hours, remainder = divmod(int(song_entries.duration or 0), 3600)
     minutes, seconds = divmod(remainder, 60)
     duration_str = f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
 
-    thumbnail_url = thumbnails[-1].get("url") if thumbnails else None
-
     embed = discord.Embed(
-        title=title,
+        title=song_entries.title,
         url=webpage_url or None,
         color=discord.Color.red()
     )
-    embed.set_author(name=channel)
+    embed.set_author(name=song_entries.channel)
     embed.add_field(name="Duração", value=duration_str, inline=True)
     msg = "> Add queue" if ephemeral else "> play now"
     embed.add_field(name="", value=msg, inline=True)
-    if thumbnail_url:
-        embed.set_thumbnail(url=thumbnail_url)
+    if thumbnail_URL:
+        embed.set_thumbnail(url=thumbnail_URL)
 
     if interaction:
         await interaction.followup.send(embed=embed, ephemeral=ephemeral)

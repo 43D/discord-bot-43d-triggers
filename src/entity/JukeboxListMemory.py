@@ -1,14 +1,15 @@
 from asyncio import Event, Task, wait_for
 from dataclasses import dataclass, field
 from collections import deque
+from src.entity.YouTube.YouTubeEntity import YouTubeMetadata, YouTubeMetadataLazy
 
 @dataclass
 class JukeboxListMemory:
     guild_id: int
     channel_id: int | None = None
     channel_id_msg: int | None = None
-    queue: deque = field(default_factory=deque)
-    current_song: dict = field(default_factory=dict)
+    queue: deque[YouTubeMetadata | YouTubeMetadataLazy] = field(default_factory=deque)
+    current_song: YouTubeMetadata | YouTubeMetadataLazy = field(default_factory=YouTubeMetadataLazy)
     audio_tasks: Task | None = None
     audio_player_events: Event | None = None
     audio_skip_events: Event | None = None
@@ -76,20 +77,22 @@ class JukeboxListMemory:
     def check_empty(self) -> bool:
         return len(self.queue) == 0 and self.audio_tasks is None
     
-    def add_song_to_queue(self, song_entries: dict):
+    def add_song_to_queue(self, song_entries: YouTubeMetadata | YouTubeMetadataLazy):
         self.queue.append(song_entries)
         print(len(self.queue))
 
-    def get_next_song(self) -> dict | None:
+    def get_next_song(self) -> YouTubeMetadata | YouTubeMetadataLazy | None:
         if len(self.queue) == 0:
             return None
-        return self.queue.popleft()
-    
+        data = self.queue.popleft()
+        if data: self.current_song = data
+        return data
+
     def song_is_currently_playing(self, url: str) -> bool:
-        return self.current_song.get("id", "no-audio") == url
+        return self.current_song.id == url
     
     def song_is_in_queue(self, url: str) -> bool:
-        return any(song.get("id") == url for song in self.queue)
+        return any(song.id == url for song in self.queue)
 
     def finish(self):
         self.queue.clear()

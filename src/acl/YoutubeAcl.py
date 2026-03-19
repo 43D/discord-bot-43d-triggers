@@ -1,6 +1,7 @@
 import asyncio
 import yt_dlp
 from copy import deepcopy
+from src.entity.YouTube.YouTubeEntity import YouTubeMetadata, YouTubeMetadataLazy
 
 YDL_OPTS = {
     "format": "bestaudio/best",
@@ -29,4 +30,7 @@ async def search_ytdlp_async(query, playlist=False):
         
     loop = asyncio.get_running_loop()
     res =  await loop.run_in_executor(None, lambda: extract(query))
-    return res.get("entries", [])
+    entries = res.get("entries", [])
+    if not playlist:
+        return [YouTubeMetadata.from_dict(s) for s in entries]
+    return [YouTubeMetadataLazy.from_dict(s) for s in entries]
