@@ -658,8 +658,8 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
             DB.set_osaka_call_register(guild_id, current_vc.channel.id, 1)
             return
         print(f"[Guild {guild_id}] Desconexão confirmada; limpando estado de áudio.")
-        AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
-        DB.set_osaka_call_register(guild_id, 0, 0)
+        # AUDIO_MANAGER.delete_manager_by_guild_id(guild_id)
+        # DB.set_osaka_call_register(guild_id, 0, 0)
 
 def get_yt_url_id(texto: str) -> str:
     valor = texto.strip()
