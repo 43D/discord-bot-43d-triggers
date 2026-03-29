@@ -1,11 +1,14 @@
 import os
+import asyncio
 import sqlite3
 
 class RegrasDB:
     def __init__(self, db_path="botdata.db"):
+        self.__db_path = db_path
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
         self.init_db()
+        self.__ban_list_lock = asyncio.Lock()
 
     def init_db(self):
         # Tabela de regras
@@ -329,7 +332,31 @@ class RegrasDB:
         
     def close(self):
         self.conn.close()
-        
+
+
+    def __set_osaka_ban_list_sync_worker(self, guild_id: int, lista: list[str]):
+        data = [(guild_id, item) for item in lista]
+        with sqlite3.connect(self.__db_path, timeout=30) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM osaka_audio_ban_list WHERE guild_id = ?",
+                (guild_id,)
+            )
+            if data:
+                cur.executemany(
+                    "INSERT INTO osaka_audio_ban_list (guild_id, list_ban) VALUES (?, ?)",
+                    data
+                )
+            conn.commit()
+
+    async def set_osaka_ban_list_async(self, guild_id: int, lista: list[str]):
+        async with self.__ban_list_lock:
+            await asyncio.to_thread(
+                self.__set_osaka_ban_list_sync_worker,
+                guild_id,
+                list(lista)  # copia defensiva
+            )
+
 class MessagesDB:
     def _start_db(self, guild_id):
         os.makedirs("osaka_db", exist_ok=True)

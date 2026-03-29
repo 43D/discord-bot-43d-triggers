@@ -93,7 +93,7 @@ async def play_sound_effects_loop(voice_client: discord.VoiceClient, guild_id: i
                         if voice_client.is_playing():
                             voice_client.stop()
                         continue
-                    DB.set_osaka_ban_list(current_manager.guild_id, current_manager.audio_ban_list)
+                    await DB.set_osaka_ban_list_async(current_manager.guild_id, current_manager.audio_ban_list)
                     await current_manager.await_event()
                     
                 except Exception as audio_error:
