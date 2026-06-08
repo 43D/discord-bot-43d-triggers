@@ -8,7 +8,7 @@ from src.entity.JukeboxListMemory import JukeboxListMemory
 from src.bot import AUDIO_MANAGER, bot, DB
 from src.acl.YoutubeAcl import search_ytdlp_async
 
-FFMPEG_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg').replace('src/audio/', '').replace('src\\audio\\', '')
+FFMPEG_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'bin', 'ffmpeg').replace('src/audio/', '').replace('src\\audio\\', '')
 print(FFMPEG_PATH)
 
 async def attempt_voice_reconnect(guild_id: int, max_retries: int = 3):

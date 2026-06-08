@@ -10,7 +10,6 @@ $HOME/.local/bin/uv clean size
 
 git clean -fdx
 git gc --prune=now
-git rm --cached -r .
 
 echo "Running the bot..."
 
