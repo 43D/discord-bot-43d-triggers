@@ -1,4 +1,6 @@
 #! /bin/bash
+export LD_LIBRARY_PATH="$(pwd)/bin/lib:${LD_LIBRARY_PATH:-}"
+export PATH="$(pwd)/bin/bin:${PATH}"
 
 echo "Syncing dependencies and cleaning cache..."
 
