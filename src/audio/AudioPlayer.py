@@ -1,6 +1,9 @@
 import asyncio
 import os
+import time
 import discord
+from src.entity.VoiceLogData import VoiceLogData
+import random
 from src.entity.YouTube.YouTubeEntity import YouTubeMetadata, YouTubeMetadataLazy
 from src.util.AudioUtils import get_audio_duration
 from src.entity.SoundEffectListMemory import SoundEffectListMemory
@@ -72,8 +75,6 @@ async def play_sound_effects_loop(voice_client: discord.VoiceClient, guild_id: i
                     bot.loop.call_soon_threadsafe(current_manager.audio_player_ending)
 
                 audio_filepath = AUDIO_MANAGER.get_next_song(guild_id)
-                print(f"Caminho do áudio: {audio_filepath}")
-
                 try:
                     audio_source = discord.FFmpegOpusAudio(
                         audio_filepath,
@@ -81,20 +82,32 @@ async def play_sound_effects_loop(voice_client: discord.VoiceClient, guild_id: i
                         before_options='-nostdin',
                         options='-vn'
                     )
-                    
+                    duration = get_audio_duration(audio_filepath)
+                    MINIMUS_DELAYS = int(os.getenv("MINIMUS_DELAYS", "60"))
+                    MAXIMUS_DELAYS = int(os.getenv("MAXIMUS_DELAYS", "660"))
+                    delay = random.randint(MINIMUS_DELAYS, MAXIMUS_DELAYS)
+
+                    config = VoiceLogData.create_config(
+                        guild_id=guild_id,
+                        song_name=audio_filepath.split(os.sep)[-1],
+                        song_path=audio_filepath,
+                        duration=duration,
+                        next_in=delay,
+                        channel_id_log=guild_id
+                    )
+                    await display_log_voice(config)
                     voice_client.play(audio_source, after=after_callback)
                     print(f"[Guild {guild_id}] Tocando áudio...", audio_filepath)
-                    
+                    print(f"[Guild {guild_id}] Configuração do log de voz criada: {config}")
                     try:
-    
-                        await current_manager.audio_player_await(get_audio_duration(audio_filepath))
+                        await current_manager.audio_player_await(duration)
                     except asyncio.TimeoutError:
                         print(f"[Guild {guild_id}] Timeout ao aguardar término do áudio")
                         if voice_client.is_playing():
                             voice_client.stop()
                         continue
                     await DB.set_osaka_ban_list_async(current_manager.guild_id, current_manager.audio_ban_list)
-                    await current_manager.await_event()
+                    await current_manager.await_event(delay)
                     
                 except Exception as audio_error:
                     print(f"[Guild {guild_id}] Erro ao criar/tocar áudio: {audio_error}")
@@ -237,3 +250,29 @@ async def display_audio_queue(song_entries: YouTubeMetadata | YouTubeMetadataLaz
         if not channel or not isinstance(channel, discord.TextChannel):
             return
         await channel.send(embed=embed)
+
+async def display_log_voice(data: VoiceLogData):
+    channel_id = DB.get_log_voice_channel(data.guild_id) if data.guild_id else None
+    if not data.guild_id or not channel_id: return
+    guild = bot.get_guild(int(data.guild_id))
+    if not guild: return
+    channel = guild.get_channel(int(channel_id))
+    if not channel or not isinstance(channel, discord.TextChannel): return
+
+    hours, remainder = divmod(int(data.duration or 0), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    duration_str = f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
+
+    hours_next, remainder_next = divmod(int(data.next_in or 0), 3600)
+    minutes_next, seconds_next = divmod(remainder_next, 60)
+    next_str = f"{hours_next}:{minutes_next:02d}:{seconds_next:02d}" if hours_next else f"{minutes_next}:{seconds_next:02d}"
+
+    embed = discord.Embed(
+        title="Tocando áudio...",
+        color=discord.Color.red()
+    )
+    embed.add_field(name="Duração", value=duration_str, inline=True)
+    embed.add_field(name="Nome", value=data.song_name or "Desconhecido", inline=True)
+    embed.add_field(name="Próximo em", value=f"{next_str} -> em <t:{int(time.time()) + int(data.next_in or 0)}:R>", inline=False)
+    embed.add_field(name="Link File", value=f"[GitHub File](https://github.com/43D/discord-bot-43d-triggers/raw/refs/heads/main/sounds/{data.song_name})", inline=True)
+    await channel.send(embed=embed)

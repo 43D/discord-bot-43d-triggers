@@ -61,10 +61,7 @@ class SoundEffectListMemory:
             self.audio_skip_events = Event()
         self.audio_skip_events.set()
 
-    async def await_event(self):
-        MINIMUS_DELAYS = int(os.getenv("MINIMUS_DELAYS", "60"))
-        MAXIMUS_DELAYS = int(os.getenv("MAXIMUS_DELAYS", "660"))
-        delay = random.randint(MINIMUS_DELAYS, MAXIMUS_DELAYS)
+    async def await_event(self, delay: float):
         print(f"[Guild {self.guild_id}] Áudio terminou, reiniciando em {delay}s...")
         if not self.audio_skip_events:
             self.audio_skip_events = Event()

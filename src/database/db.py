@@ -96,6 +96,13 @@ class RegrasDB:
         """)
         self.conn.commit()
 
+    def add_log_voice_channel(self, guild_id, canal_id):
+        print(f"Adicionando canal de log de voz para guild {guild_id}: {canal_id}")
+        return self.set_config_by_tag(guild_id, "log_voice_channel", str(canal_id))
+
+    def get_log_voice_channel(self, guild_id):
+        return self.get_configs_by_tag(guild_id, "log_voice_channel")
+
     def add_regra(self, guild_id, canal_id, regex, cargo_id):
         self.cursor.execute(
             "INSERT INTO regras (guild_id, canal_id, regex, cargo_id) VALUES (?, ?, ?, ?)",

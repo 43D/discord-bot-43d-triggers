@@ -8,6 +8,7 @@ from discord.ext import commands
 from src.entity.AudioList import AudioListManager
 from src.entity.SoundEffectListMemory import SoundEffectListMemory
 from src.entity.JukeboxListMemory import JukeboxListMemory
+from src.entity.VoiceLogData import VoiceLogData
 from src.balanceador.ProcessadorHistoricoManager import ProcessadorHistoricoManager
 from src.database.db import RegrasDB, MessagesDB
 from src.mapas.mapa import mapa_links_padrao
@@ -622,6 +623,7 @@ async def next_sound_effect(interaction: discord.Interaction):
     
     # tenta parar o áudio atual (se estiver tocando) para forçar o after_callback
     voice_client = interaction.guild.voice_client if interaction.guild else None
+    await display_log_voice_author(guild_id, interaction.user.id)
     if voice_client and isinstance(voice_client, discord.VoiceClient) and voice_client.is_playing():
         voice_client.stop()
     # seta o evento de skip (se existir) para interromper o delay
@@ -890,5 +892,27 @@ async def skip(interaction: discord.Interaction):
     if voice_client.is_playing():
         voice_client.stop()
         await interaction.response.send_message("Pulando para a próxima música...", ephemeral=False)
-    else:
-        await interaction.response.send_message("Não há música tocando no momento.", ephemeral=True)
+        return
+    await interaction.response.send_message("Não há música tocando no momento.", ephemeral=True)
+
+@bot.tree.command(name="config_log_voice", description="Logs do canal de voz.")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(canal="Canal onde a regra será aplicada")
+async def add_log_voice(interaction: discord.Interaction, canal: discord.TextChannel):
+    DB.add_log_voice_channel(interaction.guild_id, str(canal.id))
+    await interaction.response.send_message(f"Canal {canal.mention} configurado para logs de voz.", ephemeral=True)
+
+async def display_log_voice_author(guild_id: int, author_id: int):
+    print(f"[Guild {guild_id}] Evento de pular aceito por <@{author_id}>")
+    channel_id = DB.get_log_voice_channel(guild_id) if guild_id else None
+    if not guild_id or not channel_id: return
+    guild = bot.get_guild(int(guild_id))
+    if not guild: return
+    channel = guild.get_channel(int(channel_id))
+    if not channel or not isinstance(channel, discord.TextChannel): return
+    embed = discord.Embed(
+        title="Evento de pular aceito...",
+        color=discord.Color.red()
+    )
+    embed.add_field(name="Autor da ação", value=f"<@{author_id}>" if author_id else "Me <@1395943914845769850>", inline=False)
+    await channel.send(embed=embed)
