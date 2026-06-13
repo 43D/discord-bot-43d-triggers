@@ -273,6 +273,6 @@ async def display_log_voice(data: VoiceLogData):
     )
     embed.add_field(name="Duração", value=duration_str, inline=True)
     embed.add_field(name="Nome", value=data.song_name or "Desconhecido", inline=True)
-    embed.add_field(name="Próximo em", value=f"{next_str} -> em ||<t:{int(time.time()) + int(data.next_in or 0) + int(data.duration or 0)}:R>||", inline=False)
+    embed.add_field(name="Próximo em", value=f"||{next_str}|| -> em ||<t:{int(time.time()) + int(data.next_in or 0) + int(data.duration or 0)}:R>||", inline=False)
     embed.add_field(name="Link File", value=f"[GitHub File](https://github.com/43D/discord-bot-43d-triggers/raw/refs/heads/main/sounds/{data.song_name})", inline=True)
     await channel.send(embed=embed)
