@@ -5,9 +5,9 @@ from src.util.ProcessHistory import ProcessHistory
 from src.database.db import RegrasDB
 
 class ProcessadorHistoricoManager:
-    def __init__(self, db: RegrasDB, max_concurrent=4):
-        self._db = db
-        self._processar_historico = ProcessHistory(self._db)
+    def __init__(self, db: RegrasDB, max_concurrent=4, db_historical_path: str = "osaka_db/"):
+        self.__db = db
+        self.__processar_historico = ProcessHistory(self.__db, db_historical_path)
         self.queue = deque()
         self.active_tasks = {}
         self.semaphore = asyncio.Semaphore(max_concurrent)
@@ -47,7 +47,7 @@ class ProcessadorHistoricoManager:
         try:
             async with self.semaphore:
                 print(f"Iniciando processamento para guild {guild_id}")
-                await self._processar_historico.processar_historico(guild)
+                await self.__processar_historico.processar_historico(guild)
                 print(f"Finalizado processamento para guild {guild_id}")
         except asyncio.CancelledError:
             print(f"Processamento cancelado para guild {guild_id}")

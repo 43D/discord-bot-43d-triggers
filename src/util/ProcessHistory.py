@@ -6,12 +6,13 @@ import discord
 from src.database.db import RegrasDB
 
 class ProcessHistory:
-    def __init__(self, db: RegrasDB):
-        self._db = db
-        
-    def _create_db(self, guild_id):
-        os.makedirs("osaka_db", exist_ok=True)
-        db_path = f"osaka_db/{guild_id}.db"
+    def __init__(self, db: RegrasDB, db_historical_path: str = "osaka_db/"):
+        self.__db = db
+        self.__db_historical_path = db_historical_path
+        os.makedirs(self.__db_historical_path, exist_ok=True)
+
+    def __create_db(self, guild_id):
+        db_path = f"{self.__db_historical_path}{guild_id}.db"
         self._conn = sqlite3.connect(db_path)
         self._cursor = self._conn.cursor()
         self._cursor.execute("""CREATE TABLE IF NOT EXISTS mensagens (
@@ -24,16 +25,17 @@ class ProcessHistory:
             last_msg_id TEXT
         )""")
         self._conn.commit()
-    def _get_last_msg_id(self, channel_id: int) -> str | None:
+
+    def __get_last_msg_id(self, channel_id: int) -> str | None:
         self._cursor.execute("SELECT last_msg_id FROM checkpoints WHERE channel_id = ?", (str(channel_id),))
         result = self._cursor.fetchone()
         return result[0] if result else None
 
-    def _save_last_msg_id(self, channel_id: int, msg_id: int):
+    def __save_last_msg_id(self, channel_id: int, msg_id: int):
         self._cursor.execute("INSERT OR REPLACE INTO checkpoints (channel_id, last_msg_id) VALUES (?, ?)", (str(channel_id), str(msg_id)))
         self._conn.commit()
 
-    def _save_msg(self, id, msg):
+    def __save_msg(self, id, msg):
         self._cursor.execute("INSERT OR REPLACE INTO mensagens (id, conteudo) VALUES (?, ?)", (id, msg))
         self._conn.commit()
     
@@ -65,8 +67,8 @@ class ProcessHistory:
                 msg = message.content.strip()
                 if not msg or len(msg) < 1:
                     continue
-                self._save_msg(message.id, msg)
-                self._save_last_msg_id(channel.id, message.id)
+                self.__save_msg(message.id, msg)
+                self.__save_last_msg_id(channel.id, message.id)
                 last_id = message.id
             print("sleep de 100ms:", self._id_guild)  
             await asyncio.sleep(1)  # 1 chamadas a cada 1000ms
@@ -77,7 +79,7 @@ class ProcessHistory:
             return
         id_guild = guild.id if guild else 0
         self._id_guild = id_guild
-        self._create_db(id_guild)
+        self.__create_db(id_guild)
         
         def get_channel_status(canais: list[tuple[int, Literal[0, 1]]], channel_id: int) -> Literal[0, 1, 2]:
             for canal in canais:
@@ -85,14 +87,14 @@ class ProcessHistory:
                     return canal[1]
             return 2
         
-        modus_op: Literal["ALL", "WHITE", "DENY"] = self._db.get_configs_by_tag(id_guild, "osaka_mode") # type: ignore
-        canais = self._db.get_osaka_channels_by_guild(id_guild)
+        modus_op: Literal["ALL", "WHITE", "DENY"] = self.__db.get_configs_by_tag(id_guild, "osaka_mode") # type: ignore
+        canais = self.__db.get_osaka_channels_by_guild(id_guild)
         for channel in guild.text_channels:
             try:
                 channel_status = get_channel_status(canais, channel.id)
                 await asyncio.sleep(10)
                 if (modus_op == "ALL") or (modus_op == "WHITE" and channel_status == 0) or (modus_op == "DENY" and channel_status != 1):
-                    last_msg_id = self._get_last_msg_id(channel.id)
+                    last_msg_id = self.__get_last_msg_id(channel.id)
                     after_obj = discord.Object(id=int(last_msg_id)) if last_msg_id else None
                     await self.fetch_full_history(channel, after_obj)
             except Exception as e:

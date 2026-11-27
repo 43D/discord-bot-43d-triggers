@@ -1,5 +1,6 @@
 import asyncio
 from random import shuffle as shuffle_r, randint
+import os
 import re
 import aiohttp
 import discord
@@ -8,7 +9,6 @@ from discord.ext import commands
 from src.entity.AudioList import AudioListManager
 from src.entity.SoundEffectListMemory import SoundEffectListMemory
 from src.entity.JukeboxListMemory import JukeboxListMemory
-from src.entity.VoiceLogData import VoiceLogData
 from src.balanceador.ProcessadorHistoricoManager import ProcessadorHistoricoManager
 from src.database.db import RegrasDB, MessagesDB
 from src.mapas.mapa import mapa_links_padrao
@@ -18,7 +18,10 @@ from src.acl.YoutubeAcl import search_ytdlp_async
 import sys
 from urllib.parse import urlparse, parse_qs
 
-DB = RegrasDB()
+DB_PATH = os.getenv("DB_OSAKA_PATH", "botdata.db")
+DB_HISTORICAL_PATH = os.getenv("DB_HISTORICAL_PATH", "osaka_db/")
+
+DB = RegrasDB(db_path=DB_PATH)
 
 AUDIO_MANAGER = AudioListManager.from_db(DB.get_all_osaka_call_registers())
 for manager_temp in AUDIO_MANAGER.audio_manager.values():
@@ -26,7 +29,7 @@ for manager_temp in AUDIO_MANAGER.audio_manager.values():
     AUDIO_MANAGER.set_sounds_ban_list(manager_temp.guild_id, lista)
 
 processMsg = ProcessMensage(DB)
-historico_manager = ProcessadorHistoricoManager(DB, 3)
+historico_manager = ProcessadorHistoricoManager(DB, 3, DB_HISTORICAL_PATH)
 messagesDB = MessagesDB()
 osakaBot = ProcessOsaka(messagesDB, DB)
 
