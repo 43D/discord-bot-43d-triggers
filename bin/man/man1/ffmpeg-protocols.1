@@ -464,6 +464,38 @@ Gopher protocol.
 Gophers protocol.
 .PP
 The Gopher protocol with TLS encapsulation.
+.SS handle
+.IX Subsection "handle"
+Windows handle access protocol.
+.PP
+The accepted syntax is:
+.PP
+.Vb 1
+\&        handle: \-handle <handle>
+.Ve
+.PP
+If \fBhandle\fR is not specified, by default the output handle will be
+used for writing, input handle for reading. This protocol is only available
+on Windows. It has seek support if the handle corresponds to a regular file.
+It doesn't support passing the handle via URL.
+.PP
+This protocol accepts the following options:
+.IP \fBblocksize\fR 4
+.IX Item "blocksize"
+Set I/O operation maximum block size, in bytes. Default value is
+\&\f(CW\*(C`INT_MAX\*(C'\fR, which results in not limiting the requested block size.
+Setting this value reasonably low improves user termination request reaction
+time, which is valuable if data transmission is slow.
+.IP \fBhandle\fR 4
+.IX Item "handle"
+Set Windows handle.
+.Sp
+The supplied handle must already be valid in the calling process.
+When launching \fBffmpeg\fR, arrange for the child process to
+inherit the handle before passing its numeric value with
+\&\fBhandle\fR. Handles opened with \f(CW\*(C`FILE_FLAG_OVERLAPPED\*(C'\fR
+are not supported. Closing the protocol does not close the
+caller's original handle.
 .SS http
 .IX Subsection "http"
 HTTP (Hyper Text Transfer Protocol).
@@ -497,15 +529,16 @@ string describing the libavformat build. ("Lavf/<version>")
 Set the Referer header. Include 'Referer: URL' header in HTTP request.
 .IP \fBmultiple_requests\fR 4
 .IX Item "multiple_requests"
-Use persistent connections if set to 1, default is 0.
+Force persistent connections if set to 1, or disable if 0. Default is \-1,
+which means auto (implies keep-alive when using \-request_size or
+\&\-initial_request_size).
 .IP \fBrequest_size\fR 4
 .IX Item "request_size"
 Limit the size of requests made. This is useful for some pathological servers
 that throttle unbounded range requests, as well as when expecting to seek
 frequently. Disabled (set to 0) by default.
 .Sp
-Note that if enabling this option, it's strongly recommended to also enable
-the \fBmultiple_requests\fR option, as well as setting
+Note that if enabling this option, it's strongly recommended to also set
 \&\fBshort_seek_size\fR to the same value or higher. Doing so allows FFmpeg
 to reuse a single HTTP connection wherever possible.
 .IP \fBinitial_request_size\fR 4
@@ -533,7 +566,8 @@ Exports the HTTP response version number. Usually "1.0" or "1.1".
 .IX Item "cookies"
 Set the cookies to be sent in future requests. The format of each cookie is the
 same as the value of a Set-Cookie HTTP response field. Multiple cookies can be
-delimited by a newline character.
+delimited by a newline character. A cookie without a Domain attribute is only
+sent to the host of the URL it is set for.
 .IP \fBicy\fR 4
 .IX Item "icy"
 If set to 1 request ICY (SHOUTcast) metadata from the server. If the server
@@ -609,6 +643,10 @@ Reconnect automatically when disconnected before EOF is hit.
 .IX Item "reconnect_at_eof"
 If set then eof is treated like an error and causes reconnection, this is useful
 for live / endless streams.
+This does not apply to the deliberately established end of a resource whose
+complete size is unknown, i.e. when a ranged request past the end is answered
+with \f(CW416\fR. Such an end is reported as a clean EOF and is not retried,
+unless \fBreconnect_on_http_error\fR lists 416 by number.
 .IP \fBreconnect_on_network_error\fR 4
 .IX Item "reconnect_on_network_error"
 Reconnect automatically in case of TCP/TLS errors during connect.
@@ -616,6 +654,10 @@ Reconnect automatically in case of TCP/TLS errors during connect.
 .IX Item "reconnect_on_http_error"
 A comma separated list of HTTP status codes to reconnect on. The list can
 include specific status codes (e.g. '503') or the strings '4xx' / '5xx'.
+A \f(CW416\fR that ends a read or a seek past the end of a resource whose
+complete size is unknown is reported as EOF. It is retried first only if 416
+is listed by number, for example to read a resource that is still being
+written. '4xx' does not cover it.
 .IP \fBreconnect_streamed\fR 4
 .IX Item "reconnect_streamed"
 If set then even streamed/non seekable streams will be reconnected on errors.
@@ -677,7 +719,7 @@ is used for reading large video packets with small audio packets in between.
 .PP
 Some HTTP requests will be denied unless cookie values are passed in with the
 request. The \fBcookies\fR option allows these cookies to be specified. At
-the very least, each cookie must specify a value along with a path and domain.
+the very least, each cookie must specify a value.
 HTTP requests that match both the domain and path will automatically include the
 cookie value in the HTTP Cookie header field. Multiple cookies can be delimited
 by a newline.
@@ -1094,6 +1136,158 @@ Real-Time Messaging Protocol tunneled through HTTPS.
 The Real-Time Messaging Protocol tunneled through HTTPS (RTMPTS) is used
 for streaming multimedia content within HTTPS requests to traverse
 firewalls.
+.SS libcurl
+.IX Subsection "libcurl"
+HTTP and HTTPS access through the libcurl library, available as an alternative to
+the native \f(CW\*(C`http\*(C'\fR protocol when FFmpeg is built with \f(CW\*(C`\-\-enable\-libcurl\*(C'\fR.
+It runs transfers on a dedicated event-loop thread shared per
+\&\f(CW\*(C`AVFormatContext\*(C'\fR, so all of a demuxer's connections (for example HLS
+segments) reuse libcurl's connection cache and HTTP/2 and HTTP/3 multiplexing.
+.PP
+The native \f(CW\*(C`http\*(C'\fR protocol stays the default. There are two ways to use
+libcurl instead:
+.IP \(bu 4
+Prefix the URL with \f(CW\*(C`libcurl:\*(C'\fR to force it explicitly, for example
+\&\f(CW\*(C`libcurl:https://example.com/video.mp4\*(C'\fR.
+.IP \(bu 4
+Set the \fBprefer_libcurl\fR option to route \f(CW\*(C`http://\*(C'\fR and
+\&\f(CW\*(C`https://\*(C'\fR URLs through libcurl transparently.
+.IP \fBprefer_libcurl\fR 4
+.IX Item "prefer_libcurl"
+When set to \f(CW1\fR, open \f(CWhttp(s)\fR URLs with the libcurl protocol instead
+of the native one. This is a generic IO option rather than a libcurl-specific
+one, so it also applies on builds without libcurl (where it has no effect).
+Default is \f(CW0\fR.
+.PP
+The libcurl protocol accepts the following options.
+.IP \fBuser_agent\fR 4
+.IX Item "user_agent"
+Override the \f(CW\*(C`User\-Agent\*(C'\fR header. Defaults to \f(CW\*(C`Lavf/<version>\*(C'\fR.
+.IP \fBmethod\fR 4
+.IX Item "method"
+Override the HTTP method. \f(CW\*(C`HEAD\*(C'\fR retrieves the response headers and
+the resource size without a response body. Any other method name is sent
+as supplied; method tokens are case-sensitive.
+.IP \fBreferer\fR 4
+.IX Item "referer"
+Set the \f(CW\*(C`Referer\*(C'\fR header.
+.IP \fBheaders\fR 4
+.IX Item "headers"
+Set custom HTTP headers, overriding internal defaults. Multiple headers are
+separated by newlines.
+.IP \fBhttp_proxy\fR 4
+.IX Item "http_proxy"
+Set the HTTP proxy to tunnel through.
+.IP \fBcookies\fR 4
+.IX Item "cookies"
+Cookies to be sent in future requests, given as newline-delimited
+\&\f(CW\*(C`Set\-Cookie\*(C'\fR\-style values. A cookie without a domain is only sent to the
+host of the URL.
+.IP \fBlocation\fR 4
+.IX Item "location"
+The actual location of the data after following redirects. This is an output
+option, read with \fBav_opt_get\fR; demuxers use it to resolve relative URLs.
+.IP \fBoffset\fR 4
+.IX Item "offset"
+Initial byte offset of the request. Default is \f(CW0\fR.
+.IP \fBend_offset\fR 4
+.IX Item "end_offset"
+If greater than \f(CW0\fR, limit the request to the bytes preceding this offset.
+Together with \fBoffset\fR this requests a sub-range of the resource, as used
+for HLS byte-range segments.
+.IP \fBseekable\fR 4
+.IX Item "seekable"
+Control seekability of the connection. If set to \f(CW0\fR the stream is treated
+as non-seekable, \f(CW1\fR forces seekable, and \f(CW\-1\fR (the default) lets it be
+detected from the server response.
+.IP \fBtls_verify\fR 4
+.IX Item "tls_verify"
+Verify the peer certificate and host name. Enabled by default.
+.IP \fBca_file\fR 4
+.IX Item "ca_file"
+Path to a certificate authority bundle that overrides the system store.
+.IP \fBcert_file\fR 4
+.IX Item "cert_file"
+.PD 0
+.IP \fBkey_file\fR 4
+.IX Item "key_file"
+.PD
+Client certificate and private key files for mutual TLS.
+.IP \fBconnect_timeout\fR 4
+.IX Item "connect_timeout"
+Connection timeout in seconds. \f(CW0\fR (the default) uses libcurl's own timeout.
+.IP \fBmax_redirects\fR 4
+.IX Item "max_redirects"
+Maximum number of redirects to follow. Default is \f(CW16\fR.
+.IP \fBmultiple_requests\fR 4
+.IX Item "multiple_requests"
+Reuse the connection across requests (HTTP keep-alive). Enabled by default;
+setting it to \f(CW0\fR uses a fresh connection per transfer.
+.IP \fBhttp_version\fR 4
+.IX Item "http_version"
+HTTP version to use: \f(CW\*(C`auto\*(C'\fR (default), \f(CW1.0\fR, \f(CW1.1\fR, \f(CW2\fR,
+\&\f(CW\*(C`2tls\*(C'\fR, \f(CW\*(C`2\-prior\-knowledge\*(C'\fR, \f(CW3\fR or \f(CW\*(C`3only\*(C'\fR.
+.IP \fBbuffer_size\fR 4
+.IX Item "buffer_size"
+Size in bytes of the receive buffer. Default is 4 MiB.
+.IP \fBrequest_size\fR 4
+.IX Item "request_size"
+If greater than \f(CW0\fR, split a seekable transfer into ranged requests of at
+most this many bytes each. Default is \f(CW0\fR (a single request).
+.IP \fBinitial_request_size\fR 4
+.IX Item "initial_request_size"
+Limit the size of initial requests. Similar to \f(CW\*(C`request_size\*(C'\fR, but only
+used during initial format parsing. Useful for formats like MXF or MOV that
+require frequent seeks during header parsing. Lasts until the demuxer makes a
+read request larger than this size (without a seek in between), after which
+the implementation will continue using requests as usual. Disabled (set to 0)
+by default.
+.Sp
+Note that if enabling this option, it's strongly recommended to also set
+\&\fBshort_seek_size\fR to the same value or higher, otherwise the HTTP
+connection may be closed and recreated for each subsequent initial request.
+.IP \fBmax_retries\fR 4
+.IX Item "max_retries"
+Maximum number of retries after a recoverable error on a seekable transfer.
+Default is \f(CW5\fR.
+.IP \fBshort_seek_size\fR 4
+.IX Item "short_seek_size"
+Set the threshold, in bytes, for when a readahead should be preferred over a seek and
+new HTTP request. This is useful, for example, to make sure the same connection
+is used for reading large video packets with small audio packets in between.
+.IP \fBicy\fR 4
+.IX Item "icy"
+If set to 1 request ICY (SHOUTcast) metadata from the server. If the server
+supports this, the metadata has to be retrieved by the application by reading
+the \fBicy_metadata_headers\fR and \fBicy_metadata_packet\fR options.
+The default is 1.
+.IP \fBicy_status\fR 4
+.IX Item "icy_status"
+If set to 1 accept the legacy Shoutcast v1 \f(CW\*(C`ICY 200 OK\*(C'\fR status line in
+place of an HTTP one. Any reply whose status line starts with \f(CW\*(C`ICY 200\*(C'\fR
+is then treated as a successful HTTP 200.
+The default is 1.
+.IP \fBicy_metadata_headers\fR 4
+.IX Item "icy_metadata_headers"
+If the server supports ICY metadata, this contains the ICY-specific HTTP reply
+headers, separated by newline characters.
+.IP \fBicy_metadata_packet\fR 4
+.IX Item "icy_metadata_packet"
+If the server supports ICY metadata, and \fBicy\fR was set to 1, this
+contains the last non-empty metadata packet sent by the server. It should be
+polled in regular intervals by applications interested in mid-stream metadata
+updates.
+.IP \fBmetadata\fR 4
+.IX Item "metadata"
+Set an exported dictionary containing Icecast metadata from the bitstream, if present.
+Only useful with the C API.
+.PP
+A stream carrying in-band ICY metadata is always treated as non-seekable, since
+its byte offsets do not address the payload. \fBseekable\fR,
+\&\fBrequest_size\fR and \fBmax_retries\fR therefore have no effect on such
+a stream.
+.PP
+For more information see: <\fBhttps://curl.se/libcurl/\fR>.
 .SS libsmbclient
 .IX Subsection "libsmbclient"
 libsmbclient permits one to manipulate CIFS/SMB network resources.
@@ -1145,6 +1339,11 @@ truncating. Default value is 1.
 .IX Item "private_key"
 Specify the path of the file containing private key to use during authorization.
 By default libssh searches for keys in the \fI~/.ssh/\fR directory.
+.IP \fBverify\fR 4
+.IX Item "verify"
+Verify the server host key against the known_hosts file before
+authenticating, if set to 1. Servers that are not in the file, or whose
+key differs from the one recorded there, are refused. Default value is 1.
 .PP
 Example: Play a file stored on remote server.
 .PP
@@ -1625,27 +1824,44 @@ some risk of collision if the same URL is used for different content (e.g.
 as a result of extra POST data being used to select the stream ID). To avoid
 this, make sure to only use this protocol for URLs that uniquely identify
 the content; otherwise you may get a garbled mix of sources.
+This includes content selected by request options such as headers, cookies or
+credentials: data cached for one user is returned to every other user of the
+same cache directory.
+.PP
+See also the \fBcache_key\fR option.
 .PP
 The accepted options are:
 .IP \fBcache_dir\fR 4
 .IX Item "cache_dir"
 Path to the directory where cache files are stored. This option is required.
+Anyone who can write to this directory or to \fBmetadata_dir\fR can alter
+the data read by all users of the cache, or make them crash, so neither may be
+writable by untrusted users.
+.IP \fBmetadata_dir\fR 4
+.IX Item "metadata_dir"
+Path to the directory where metadata files are stored. Optional. If not
+specified, metadata is stored in the same directory as the cache file.
+.IP \fBcache_key\fR 4
+.IX Item "cache_key"
+Override the hash used to identify the cached content. Note that this is also
+used verbatim as the base name of the cache and metadata files, so it must be
+a valid file name.
 .IP \fBblock_shift\fR 4
 .IX Item "block_shift"
 Shift factor (log2) of the block size used for internal reads/writes. Defaults
 to 15, i.e. 32KB blocks. If this does not match the value that was specified
 when an existing cache file was created, the previously specified value will
 be used instead.
-.IP \fBread_only\fR 4
-.IX Item "read_only"
+.IP \fBcache_read_only\fR 4
+.IX Item "cache_read_only"
 If true, use the shared cache for reads but don't write any new blocks to it.
 Default is false. Note that even with this option enabled, the cache file will
 be initialized if it does not already exist.
 .IP \fBcache_verify\fR 4
 .IX Item "cache_verify"
 If true, verify any data read from the cache against the underlying input
-stream, and report any mismatches. Note that this will make the cache layer
-effectively useless. This is purely a debug option.
+stream, and error out on any mismatches. Note that this will make the cache
+layer effectively useless. This is purely a debug option.
 .IP \fBcache_timeout\fR 4
 .IX Item "cache_timeout"
 If set to a nonzero value, specifies the maximum time (in microseconds) to wait
@@ -1654,12 +1870,45 @@ and cache the same block at the same time. If this timeout elapses, it's
 assumed that the other process may have gotten stuck or died in the meantime.
 .Sp
 If set to zero, no waiting is done and all processes will immediately race
-to try and fetch the same missing blocks themselves. Defaults to 0.
+to try and fetch the same missing blocks themselves. Defaults to 10000 (10 ms).
+.IP \fBignore_errors\fR 4
+.IX Item "ignore_errors"
+If true, failures of the underlying input stream are not treated as fatal, and
+playback continues using only the data already present in the cache file.
+Default is false. Any attempt to read into uncached data will result in an
+unrecoverable IO error.
 .IP \fBretry_errors\fR 4
 .IX Item "retry_errors"
 If true (the default), transient read errors from the underlying input stream
 are ignored and retried again. If false, any blocks that previously failed
 being read from will be treated as permanently inaccessible.
+.IP \fBretry_corrupt\fR 4
+.IX Item "retry_corrupt"
+If true (the default), blocks whose contents fail the CRC integrity check are
+re-fetched from the underlying input stream, overwriting the corrupt cached
+data. If false, cache corruption is treated as a fatal read error.
+.IP \fBcache_size_max\fR 4
+.IX Item "cache_size_max"
+Maximum amount of data to cache, in bytes, rounded down to a multiple of the
+chosen block size. Accepts the usual size suffixes, e.g. \f(CW\*(C`10G\*(C'\fR for
+10*10^9 bytes, or \f(CW\*(C`10Gi\*(C'\fR for 10*2^30 bytes. Defaults to 0, meaning no
+limit.
+.Sp
+Once this limit is reached, the protocol switches to read-only mode (see
+\&\fBcache_read_only\fR). Already cached data is never evicted, so once this
+limit is reached, no new data will ever be cached until the cache file is
+deleted.
+.Sp
+Note that this option is best-effort only, and may over-write up to N\-1
+blocks, where N is the number of concurrent processes using the same cache
+file. Note also that the underlying file system may reserve more space than
+written, if the underlying allocation granularity is larger than the block
+size.
+.IP \fBoffset\fR 4
+.IX Item "offset"
+Initial byte offset to start reading from. This option is not passed on to the
+underlying protocol; it instead gets a regular seek on the first cache miss.
+Defaults to 0.
 .PP
 URL Syntax is
 .PP
@@ -2113,6 +2362,20 @@ space) can be used to escape keys and values.
 Options can also can be specified via command line options (or in code via
 \&\f(CW\*(C`AVOption\*(C'\fRs).
 .PP
+The TLS backend is selected at build time. The available backends are GnuTLS,
+OpenSSL, mbedTLS, libtls, SChannel (Windows) and Secure Transport (Apple
+platforms). Only one backend can be linked into a build.
+.PP
+On Apple platforms, configure autodetects Secure Transport when no other TLS
+library is enabled. Apple has deprecated Secure Transport in favor of
+Network.framework and it does not support TLS 1.3, so such a build cannot
+connect to servers that require TLS 1.3. configure therefore emits a warning
+when it selects Secure Transport automatically; building with
+\&\f(CW\*(C`\-\-enable\-gnutls\*(C'\fR or \f(CW\*(C`\-\-enable\-openssl\*(C'\fR is recommended instead.
+Passing \f(CW\*(C`\-\-enable\-securetransport\*(C'\fR explicitly marks the backend as
+requested and suppresses the warning. This is also needed with
+\&\f(CW\*(C`\-\-fatal\-warnings\*(C'\fR, since any warning makes configure fail.
+.PP
 The list of supported options follows.
 .IP "\fBca_file, cafile=\fR\fIfilename\fR" 4
 .IX Item "ca_file, cafile=filename"
@@ -2121,6 +2384,12 @@ as trusted. If the linked TLS library contains a default this might not
 need to be specified for verification to work, but not all libraries and
 setups have defaults built in.
 The file must be in OpenSSL PEM format.
+When no file is given, Windows builds using OpenSSL 3.2 or later with
+Windows certificate store support also use certificates from the system
+ROOT store. OpenSSL applies its usual certificate checks. Additional
+trust restrictions stored as Windows certificate properties, rather than
+encoded in the certificates themselves, are not enforced by its Windows
+certificate store loader.
 .IP "\fBtls_verify, verify=\fR\fI1|0\fR" 4
 .IX Item "tls_verify, verify=1|0"
 If enabled, try to verify the peer that we are communicating with.
@@ -2130,8 +2399,8 @@ database, but it does not validate that the certificate actually
 matches the host name we are trying to connect to. (With other backends,
 the host name is validated as well.)
 .Sp
-This is disabled by default since it requires a CA database to be
-provided by the caller in many cases.
+This is enabled by default. Verifying the peer requires a CA database,
+which in some cases has to be provided by the caller.
 .IP "\fBcert_file, cert=\fR\fIfilename\fR" 4
 .IX Item "cert_file, cert=filename"
 A file containing a certificate to use in the handshake with the peer.
@@ -2167,6 +2436,9 @@ To play back a stream from the TLS/SSL server using \fBffplay\fR:
 .IX Subsection "dtls"
 Datagram Transport Layer Security (DTLS)
 .PP
+DTLS requires one of the OpenSSL, GnuTLS, mbedTLS or SChannel backends;
+libtls and Secure Transport provide TLS only.
+.PP
 The required syntax for a DTLS URL is:
 .PP
 .Vb 1
@@ -2190,6 +2462,12 @@ as trusted. If the linked TLS library contains a default this might not
 need to be specified for verification to work, but not all libraries and
 setups have defaults built in.
 The file must be in OpenSSL PEM format.
+When no file is given, Windows builds using OpenSSL 3.2 or later with
+Windows certificate store support also use certificates from the system
+ROOT store. OpenSSL applies its usual certificate checks. Additional
+trust restrictions stored as Windows certificate properties, rather than
+encoded in the certificates themselves, are not enforced by its Windows
+certificate store loader.
 .IP "\fBtls_verify, verify=\fR\fI1|0\fR" 4
 .IX Item "tls_verify, verify=1|0"
 If enabled, try to verify the peer that we are communicating with.
@@ -2198,8 +2476,8 @@ peer certificate is signed by one of the root certificates in the CA
 database, but it does not validate that the certificate actually
 matches the host name we are trying to connect to.
 .Sp
-This is disabled by default since it requires a CA database to be
-provided by the caller in many cases.
+This is enabled by default. Verifying the peer requires a CA database,
+which in some cases has to be provided by the caller.
 .IP "\fBcert_file, cert=\fR\fIfilename\fR" 4
 .IX Item "cert_file, cert=filename"
 A file containing a certificate to use in the handshake with the peer.
@@ -2325,6 +2603,7 @@ exclude the source addresses in the multicast subscription.
 .IX Item "fifo_size=units"
 Set the UDP receiving circular buffer size, expressed as a number of
 packets with size of 188 bytes. If not specified defaults to 7*4096.
+Set to 0 to disable the receiving circular buffer and its receive thread.
 .IP \fBoverrun_nonfatal=\fR\fI1|0\fR 4
 .IX Item "overrun_nonfatal=1|0"
 Survive in case of UDP receiving circular buffer overrun. Default

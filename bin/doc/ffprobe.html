@@ -757,6 +757,13 @@ sections:
 <pre class="example-preformatted">stream_tags=title
 </pre></div>
 
+<p>Selecting <code class="code">stream</code> or <code class="code">streams</code> does not by itself enable program or
+stream group output. To also show streams within programs or groups, use
+<code class="code">-show_programs</code>, <code class="code">-show_stream_groups</code>, or select their unique
+section name, for example <code class="code">-show_entries program_stream=index</code> or
+<code class="code">-show_entries stream_group_stream=index</code>. The shared names still select
+fields within programs and stream groups when their output is enabled.
+</p>
 </dd>
 <dt><samp class="option">-show_packets</samp></dt>
 <dd><p>Show information about each packet contained in the input multimedia

@@ -159,10 +159,26 @@ streams before EOF.
 .RE
 .RS 4
 .RE
+.IP "\fBseek_flags\fR \fIflags\fR \fB(\fR\fIinput\fR\fB)\fR" 4
+.IX Item "seek_flags flags (input)"
+Set flags added to every seek. Default is none.
+.Sp
+Possible values:
+.RS 4
+.IP \fBany\fR 4
+.IX Item "any"
+Allow seeking to non-keyframes on demuxer level when supported.
+.IP \fBpreroll\fR 4
+.IX Item "preroll"
+Move the target of a seek back by the audio pre-roll, for a caller that
+decodes. The seek can then land on an earlier video keyframe.
+.RE
+.RS 4
+.RE
 .IP "\fBseek2any\fR \fIinteger\fR \fB(\fR\fIinput\fR\fB)\fR" 4
 .IX Item "seek2any integer (input)"
 Allow seeking to non-keyframes on demuxer level when supported if set to 1.
-Default is 0.
+Default is 0. This option is deprecated, use \f(CW\*(C`seek_flags any\*(C'\fR instead.
 .IP "\fBanalyzeduration\fR \fIinteger\fR \fB(\fR\fIinput\fR\fB)\fR" 4
 .IX Item "analyzeduration integer (input)"
 Specify how many microseconds are analyzed to probe the input. A
@@ -445,6 +461,12 @@ This demuxer is used to demux ASF files and MMS network streams.
 .IP "\fB\-no_resync_search\fR \fIbool\fR" 4
 .IX Item "-no_resync_search bool"
 Do not try to resynchronize by looking for a certain optional start code.
+.SS astc
+.IX Subsection "astc"
+ASTC (Adaptive Scalable Texture Compression) demuxer.
+.PP
+This demuxer reads the 16\-byte \fI.astc\fR header, hands it to the decoder as
+extradata, and emits the compressed image as a single packet.
 .SS concat
 .IX Subsection "concat"
 Virtual concatenation script demuxer.
@@ -621,6 +643,15 @@ If set to 1, every packet will contain the \fIlavf.concat.start_time\fR and the
 the duration of the respective file segments in the concatenated output
 expressed in microseconds. The duration metadata is only set if it is known
 based on the concat file.
+The default is 0.
+.IP \fBchapter_per_file\fR 4
+.IX Item "chapter_per_file"
+If set to 1, add a chapter for each file, named after the \f(CW\*(C`title\*(C'\fR
+metadata of the file or, failing that, its file name, and carrying the rest
+of the file's metadata. The files are opened in order when the script is read
+to learn their durations, stopping after the first file whose duration is
+unknown, which gets the last chapter; when all durations are known, this also
+makes the total duration known and the output seekable.
 The default is 0.
 .PP
 \fIExamples\fR
@@ -918,7 +949,12 @@ The id field is set to the bitrate variant index number. By setting
 the discard flags on AVStreams (by pressing 'a' or 'v' in ffplay),
 the caller can decide which variant streams to actually receive.
 The total bitrate of the variant that the stream belongs to is
-available in a metadata key named "variant_bitrate".
+available in a metadata key named "variant_bitrate". It is unset when
+the stream is shared by variants with different bitrates. The value is
+always available in the corresponding program's metadata.
+.PP
+The X\-TIMESTAMP-MAP header of WebVTT subtitle segments is applied, so the
+cue times are on the timeline of the other renditions.
 .PP
 It accepts the following options:
 .IP \fBlive_start_index\fR 4
@@ -1102,6 +1138,37 @@ terminating with the ".png" suffix:
 .Vb 1
 \&        ffmpeg \-framerate 10 \-pattern_type glob \-i "*.png" out.mkv
 .Ve
+.SS jpeg_mpf
+.IX Subsection "jpeg_mpf"
+JPEG Multi-Picture Format demuxer.
+.PP
+Exposes each JPEG image stored in a CIPA DC\-007 MP file as a separate stream,
+in the order of the MP Entries, with the First Individual Image flagged as the
+default stream. If the file contains an ISO 21496\-1 gain map, as is the case
+for JPEG Ultra HDR, the primary image and the gain map are linked by a
+\&\fBgain_map\fR stream group, and the gain map parameters are exported as
+frame side data by the decoder.
+.PP
+Images of any other type (e.g. large thumbnails or multi-view images) are
+exposed as additional streams.
+.PP
+This demuxer accepts the following options, which behave like the options of
+the same name of the \fBimage2\fR demuxer:
+.IP \fBframerate\fR 4
+.IX Item "framerate"
+Set the frame rate of the video streams. The default is 25.
+.IP \fBloop\fR 4
+.IX Item "loop"
+If set to 1, loop over the images in the file. The default is 0. This requires
+seekable input.
+.SS ktx
+.IX Subsection "ktx"
+Khronos Texture 1.0 demuxer for ASTC textures.
+.PP
+This demuxer reads the KTX 1.0 header and maps the ASTC GL internal format to
+the block footprint the decoder needs, so only files using the ASTC formats
+are accepted. A \f(CW\*(C`KTXorientation\*(C'\fR key is preserved as stream display
+metadata, and the texture is emitted as a single packet.
 .SS libgme
 .IX Subsection "libgme"
 The Game Music Emu library is a collection of video game music file emulators.
@@ -1225,6 +1292,32 @@ Merge a MCC file into a MXF file:
 .Ve
 .Sp
 This retains all VANC data and inserts it into the output MXF file as a \f(CW\*(C`SMPTE_436M_ANC\*(C'\fR data stream.
+.SS matroska
+.IX Subsection "matroska"
+Matroska / WebM demuxer.
+.PP
+\fIOptions\fR
+.IX Subsection "Options"
+.IP "\fBbest_fit_ts\fR \fIbool\fR" 4
+.IX Item "best_fit_ts bool"
+Fit the timestamps to the units of each stream, where the clock of the file
+is coarser than those units. The most common Matroska clock is a millisecond,
+which places a 48 kHz audio packet up to 24 samples away from its first
+sample.
+.Sp
+Audio tracks are moved to a sample time base and their timestamps are
+rebuilt from the packet lengths, which come from the codec for Opus and AAC
+and from the default duration of the track for the other codecs. A stored
+timestamp is followed wherever it departs from that count by more than its
+rounding. Streams whose units the clock already resolves, such as video at
+the usual frame rates, keep the clock of the file.
+.Sp
+Vorbis tracks, tracks stored in a compatibility or interleaved mode, tracks
+whose packets a parser re-times and tracks without a known sample rate or
+packet length also keep the clock of the file. The reason is logged at
+verbose level.
+.Sp
+Default is disabled.
 .SS mov/mp4/3gp
 .IX Subsection "mov/mp4/3gp"
 Demuxer for Quicktime File Format & ISO/IEC Base Media File Format (ISO/IEC 14496\-12 or MPEG\-4 Part 12, ISO/IEC 15444\-12 or JPEG 2000 Part 12).
@@ -1372,7 +1465,7 @@ streams move to different PIDs. Default value is 0.
 .IP \fBmax_packet_size\fR 4
 .IX Item "max_packet_size"
 Set maximum size, in bytes, of packet emitted by the demuxer. Payloads above this size
-are split across multiple packets. Range is 1 to INT_MAX/2. Default is 204800 bytes.
+are split across multiple packets. Range is 184 to INT_MAX/2. Default is 204800 bytes.
 .SS mpjpeg
 .IX Subsection "mpjpeg"
 MJPEG encapsulated in multi-part MIME demuxer.
@@ -1454,6 +1547,17 @@ Convert an RCWT backup to Scenarist (SCC) format:
 .Sp
 Note that the SCC format does not support all of the possible CC extensions
 that can be stored in RCWT (such as EIA\-708).
+.SS sacd
+.IX Subsection "sacd"
+Super Audio CD (SACD) demuxer.
+.PP
+It reads a disc image or a device. The multi channel and the 2\-channel stereo
+version of a disc are programs with one audio stream each. The chapters are
+the tracks of the first program.
+.PP
+Images with 2048 bytes per sector are detected automatically. Images that
+hold the raw sectors of 2064 bytes need the format to be forced with
+\&\f(CW\*(C`\-f sacd\*(C'\fR, or a \fBformatprobesize\fR of at least 2M.
 .SS sbg
 .IX Subsection "sbg"
 SBaGen script demuxer.
@@ -1531,6 +1635,12 @@ See the same option for the \fBwav\fR demuxer.
 RIFF Wave Audio demuxer.
 .PP
 This demuxer accepts the following options:
+.IP "\fBignore_length\fR \fIbool\fR" 4
+.IX Item "ignore_length bool"
+Ignore the size of the \f(CW\*(C`data\*(C'\fR chunk and keep reading until the end of the file if set.
+May be useful to read broken or partial files where the header was not properly updated,
+but will misinterpret files with non-audio chunks after the \f(CW\*(C`data\*(C'\fR chunk.
+Default is disabled.
 .IP \fBmax_size\fR 4
 .IX Item "max_size"
 Specify the maximum packet size in bytes for the demuxed packets. By default
@@ -1568,6 +1678,21 @@ WebP specification says that viewer applications are not required to
 use it. If \fBusebgcolor\fR is set to true, then the background
 color hint will be used, otherwise transparent black will be used for
 the background. Default value is false.
+.SS webvtt
+.IX Subsection "webvtt"
+WebVTT subtitle demuxer.
+.PP
+It accepts the following options:
+.IP \fBkind\fR 4
+.IX Item "kind"
+Set the kind of the track: \fBsubtitles\fR (default), \fBcaptions\fR,
+\&\fBdescriptions\fR or \fBmetadata\fR.
+.IP \fBtimestamp_map\fR 4
+.IX Item "timestamp_map"
+Apply the \f(CW\*(C`X\-TIMESTAMP\-MAP\*(C'\fR header of HLS WebVTT segments to the cue
+timestamps, which moves them onto the MPEG-TS timeline of the other
+renditions, and use the 90 kHz MPEG-TS time base for the stream. Default
+value is false.
 .SH MUXERS
 .IX Header "MUXERS"
 Muxers are configured elements in FFmpeg which allow writing
@@ -1934,6 +2059,22 @@ PlayStation Portable MP4/MPEG\-4 Part 14 format variant. This is based
 on MPEG\-4 Part 14 format with a few incompatible variants, used to
 play files on PlayStation devices.
 .PP
+\fIStereoscopic 3D\fR
+.IX Subsection "Stereoscopic 3D"
+.PP
+When the output stream has stereoscopic 3D side data (see the
+\&\fB\-stereo3d\fR option), these muxers write:
+.IP \(bu 4
+MP4: Google spatial-media \f(CW\*(C`st3d\*(C'\fR and Apple \f(CW\*(C`vexu\*(C'\fR can be
+written for supported metadata with \fB\-strict unofficial\fR.
+Stricter compliance levels skip these boxes. Warnings are logged
+when stereoscopic or spherical side data is present, naming
+\&\f(CW\*(C`st3d\*(C'\fR or \f(CW\*(C`sv3d\*(C'\fR, respectively; there is no corresponding
+compliance warning for \f(CW\*(C`vexu\*(C'\fR. Monoscopic layouts do not
+produce an \f(CW\*(C`eyes\*(C'\fR box.
+.IP \(bu 4
+MOV: Apple \f(CW\*(C`vexu\*(C'\fR eyes only. \f(CW\*(C`st3d\*(C'\fR is not written.
+.PP
 \fIFragmentation\fR
 .IX Subsection "Fragmentation"
 .PP
@@ -2082,7 +2223,9 @@ fragment at every frame
 start a new fragment at each video keyframe
 .IP \fBglobal_sidx\fR 4
 .IX Item "global_sidx"
-write a global sidx index at the start of the file
+write a global sidx index at the start of the file. For fragmented output
+that would otherwise use absolute fragment offsets, this enables
+\&\fBdefault_base_moof\fR.
 .IP \fBisml\fR 4
 .IX Item "isml"
 create a live smooth streaming feed (for pushing to a publishing point)
@@ -2444,6 +2587,17 @@ to \f(CW\*(C`INT_MAX\*(C'\fR, in case \f(CW\-1\fR is set then no loop is specifi
 Specify loop end position expressed in milliseconds, from \f(CW0\fR to
 \&\f(CW\*(C`INT_MAX\*(C'\fR, default is \f(CW0\fR, in case \f(CW0\fR is set it
 assumes the total stream duration.
+.SS astc
+.IX Subsection "astc"
+ASTC (Adaptive Scalable Texture Compression) muxer.
+.PP
+This muxer accepts a single \fBlibastcenc\fR video stream and writes one
+image: the 16\-byte \fI.astc\fR header, taken from the encoder's extradata,
+followed by the raw ASTC bitstream. The block footprint and the image
+dimensions come from the same extradata, and a second packet is rejected.
+.PP
+Use the \fI.ktx\fR container for a texture that also needs its color space
+or row order recorded.
 .SS au
 .IX Subsection "au"
 SUN AU audio muxer.
@@ -4281,6 +4435,12 @@ writing is completed. Default is disabled.
 .IX Item "protocol_opts options_list"
 Set protocol options as a :\-separated list of key=value parameters. Values
 containing the \f(CW\*(C`:\*(C'\fR special character must be escaped.
+.IP "\fBupdate_filemtime\fR \fIbool\fR" 4
+.IX Item "update_filemtime bool"
+If set to 1, set each output file's modification time to the
+\&\f(CW\*(C`creation_time\*(C'\fR metadata value plus the frame's PTS offset.
+If \f(CW\*(C`creation_time\*(C'\fR is missing or unparsable, a warning is
+logged and the option is ignored. Default value is 0.
 .PP
 \fIExamples\fR
 .IX Subsection "Examples"
@@ -4289,7 +4449,7 @@ Use \fBffmpeg\fR for creating a sequence of files \fIimg\-001.jpeg\fR,
 \&\fIimg\-002.jpeg\fR, ..., taking one image every second from the input video:
 .Sp
 .Vb 1
-\&        ffmpeg \-i in.avi \-vsync cfr \-r 1 \-f image2 \*(Aqimg\-%03d.jpeg\*(Aq
+\&        ffmpeg \-i in.avi \-fps_mode cfr \-r 1 \-f image2 \*(Aqimg\-%03d.jpeg\*(Aq
 .Ve
 .Sp
 Note that with \fBffmpeg\fR, if the format is not specified with the
@@ -4298,7 +4458,7 @@ format, the image2 muxer is automatically selected, so the previous
 command can be written as:
 .Sp
 .Vb 1
-\&        ffmpeg \-i in.avi \-vsync cfr \-r 1 \*(Aqimg\-%03d.jpeg\*(Aq
+\&        ffmpeg \-i in.avi \-fps_mode cfr \-r 1 \*(Aqimg\-%03d.jpeg\*(Aq
 .Ve
 .Sp
 Note also that the pattern must not necessarily contain "%d" or
@@ -4349,6 +4509,84 @@ research centres, and was used a number of times in the creation of early
 computer-generated compositions.
 .PP
 This muxer accepts a single audio stream containing PCM data.
+.SS iterm2
+.IX Subsection "iterm2"
+iTerm2 inline image protocol muxer.
+.PP
+This muxer writes video frames as OSC 1337 inline images for display in
+terminals that support the iTerm2 image protocol. Use \fB\-re\fR to limit
+the output rate to the source framerate; without it, frames are emitted as
+fast as they are encoded, which is usually not desired for live display.
+.PP
+Frames are sent with the multipart form of the protocol, which splits each
+image across several short control sequences. This avoids the per-sequence
+size limit that otherwise discards large frames, and requires iTerm2 3.5 or
+newer.
+.PP
+The output is a self-contained byte stream and can be redirected to a file.
+Replaying the file with \fBcat\fR displays the images in the terminal.
+.PP
+\fIOptions\fR
+.IX Subsection "Options"
+.IP "\fBdisplay_width\fR \fIsize\fR" 4
+.IX Item "display_width size"
+Set the displayed image width. \fIsize\fR can be \fBauto\fR, \fIN\fR terminal
+cells, \fIN\fRpx pixels, or \fIN\fR% of the terminal width. When unset, the
+terminal derives the width from the image.
+.IP "\fBdisplay_height\fR \fIsize\fR" 4
+.IX Item "display_height size"
+Set the displayed image height. \fIsize\fR uses the same syntax as
+\&\fBdisplay_width\fR. When unset, the terminal derives the height from the
+image.
+.IP "\fBkeep_aspect\fR \fIbool\fR" 4
+.IX Item "keep_aspect bool"
+Preserve the input aspect ratio when scaling. Default is enabled.
+.IP "\fBtmux\fR \fIbool\fR" 4
+.IX Item "tmux bool"
+Wrap image data in tmux DCS passthrough. This requires a tmux version whose
+passthrough sequence size limit is large enough for image data, with
+passthrough enabled via \fBtmux set \-g allow-passthrough on\fR. Default is
+disabled.
+.PP
+\fIExamples\fR
+.IX Subsection "Examples"
+.PP
+Display a video in an iTerm2 terminal:
+.PP
+.Vb 1
+\&        ffmpeg \-re \-i input.mp4 \-f iterm2 \-
+.Ve
+.PP
+Scale the displayed image to 40 terminal cells tall. Inside tmux, enable
+passthrough first with \fBtmux set \-g allow-passthrough on\fR, then add
+\&\fBtmux\fR:
+.PP
+.Vb 1
+\&        ffmpeg \-re \-i input.mp4 \-f iterm2 \-display_height 40 \-tmux 1 \-
+.Ve
+.SS jpeg_mpf
+.IX Subsection "jpeg_mpf"
+JPEG Multi-Picture Format muxer.
+.PP
+Stores multiple JPEG images in a single file using the CIPA DC\-007 MP
+extensions. The first input stream is always the primary image. Every other
+stream must be specified by a stream group describing what it is; see the
+\&\fB\-stream_group\fR option of the \fBffmpeg\fR tool.
+.PP
+Note: Currently, the only implemented type of stream group is \fBgain_map\fR,
+which may be used to store a gain map for JPEG Ultra HDR.
+.PP
+\fIExamples\fR
+.IX Subsection "Examples"
+.PP
+Encode an SDR tone-mapped image and an HDR gain map computed from it:
+.PP
+.Vb 4
+\&        ffmpeg \-i input\-hdr.png \-filter_complex
+\&        "[0:v] scale=out_transfer=srgb:out_primaries=bt709,split [base][sdr];
+\&        [base][0:v] gainmap [gain]" \-map "[sdr]" \-map "[gain]" \-c:v mjpeg
+\&        \-stream_group type=gain_map:st=0:st=1:el_index=1 \-f jpeg_mpf output.jpg
+.Ve
 .SS ivf
 .IX Subsection "ivf"
 On2 IVF muxer.
@@ -4366,6 +4604,38 @@ This muxer accepts a single \fBjacosub\fR subtitles stream.
 .PP
 For more information about the format, see
 <\fBhttp://unicorn.us.com/jacosub/jscripts.html\fR>.
+.SS ktx
+.IX Subsection "ktx"
+Khronos Texture 1.0 muxer for ASTC textures.
+.PP
+This muxer accepts a single \fBlibastcenc\fR video stream and writes one
+image: the ASTC block size and the image dimensions are taken from the
+encoder's extradata, and a second packet is rejected. The stored row order
+is recorded in a \f(CW\*(C`KTXorientation\*(C'\fR key.
+.PP
+\fIOptions\fR
+.IX Subsection "Options"
+.IP "\fBsrgb\fR \fIinteger\fR" 4
+.IX Item "srgb integer"
+Select the GL internal format color space. Possible values:
+.RS 4
+.IP \fBauto\fR 4
+.IX Item "auto"
+Use the color profile published by the encoder, which is the default.
+.IP \fBlinear\fR 4
+.IX Item "linear"
+Write the linear ASTC format.
+.IP \fBsrgb\fR 4
+.IX Item "srgb"
+Write the sRGB ASTC format.
+.RE
+.RS 4
+.Sp
+An explicit value that contradicts a known encoder profile is rejected.
+A raw \fI.astc\fR input does not carry a color profile, so remuxing it to
+\&\fI.ktx\fR with \f(CW\*(C`auto\*(C'\fR writes the sRGB format; pass
+\&\fB\-srgb linear\fR to keep a linear texture.
+.RE
 .SS kvag
 .IX Subsection "kvag"
 Simon & Schuster Interactive VAG muxer.
@@ -4388,6 +4658,14 @@ LRC (short for LyRiCs) is a computer file format that synchronizes
 song lyrics with an audio file, such as MP3, Vorbis, or MIDI.
 .PP
 This muxer accepts a single \fBsubrip\fR or \fBtext\fR subtitles stream.
+.PP
+\fIOptions\fR
+.IX Subsection "Options"
+.IP "\fBprecision\fR \fInumber\fR" 4
+.IX Item "precision number"
+Set the number of decimal digits used for the fractional (sub-second)
+part of the timestamps. Range is \f(CW1\fR to \f(CW6\fR. Default is
+\&\f(CW2\fR, i.e. centiseconds.
 .PP
 \fIMetadata\fR
 .IX Subsection "Metadata"
@@ -4438,6 +4716,11 @@ French).
 .IP \fBstereo_mode\fR 4
 .IX Item "stereo_mode"
 Set stereo 3D video layout of two views in a single video track.
+The \fB\-stereo3d\fR option overrides existing stereoscopic side data
+and \f(CW\*(C`stereo_mode\*(C'\fR metadata for the selected output stream.
+Otherwise, stream-level \f(CW\*(C`stereo_mode\*(C'\fR metadata takes priority over
+global metadata, and stereoscopic side data is used when neither tag is
+present.
 .Sp
 The following values are recognized:
 .RS 4
@@ -4533,7 +4816,21 @@ hardcoded fixed value.
 Store at most the provided number of milliseconds in a cluster.
 .Sp
 If not specified, the limit is set automatically to a sensible
-hardcoded fixed value.
+hardcoded fixed value. The limit cannot exceed 32767 ticks of the
+timestamp scale, 327 milliseconds at 10 microseconds.
+.IP "\fBtimestamp_scale\fR \fInanoseconds\fR" 4
+.IX Item "timestamp_scale nanoseconds"
+Set the clock of the file, in nanoseconds.
+.Sp
+If set to \f(CW0\fR, the default, the muxer picks the coarsest power of
+ten of a nanosecond, up to a millisecond, that is finer than half a
+sample of every audio stream: 10 microseconds at 44.1 or 48 kHz. With a
+video stream the clock stays at 10 microseconds or above, so that frame
+reordering fits in a cluster. WebM files use a millisecond.
+A value set by this option applies to WebM files too.
+.Sp
+Set it to \f(CW1000000\fR to write the millisecond clock that most
+Matroska files use.
 .IP "\fBdash\fR \fIbool\fR" 4
 .IX Item "dash bool"
 Create a WebM file conforming to WebM DASH specification. By default
@@ -4838,6 +5135,12 @@ Override the default PCR retransmission time in milliseconds. Default is
 \&\f(CW\-1\fR which means that the PCR interval will be determined automatically:
 20 ms is used for CBR streams, the highest multiple of the frame duration which
 is less than 100 ms is used for VBR streams.
+.IP "\fBmpegts_pcr_pid\fR \fIinteger\fR" 4
+.IX Item "mpegts_pcr_pid integer"
+Set a separate PID for PCR packets. When set to a valid PID value, PCR is
+carried in adaptation-field-only packets on the specified PID, separate from
+the elementary stream PIDs. This is required for example by ARIB TR\-B14.
+Default is \f(CW\-1\fR which means PCR is placed on the elementary stream PIDs.
 .IP "\fBpat_period\fR \fIduration\fR" 4
 .IX Item "pat_period duration"
 Maximum time in seconds between PAT/PMT tables. Default is \f(CW0.1\fR.
@@ -4881,6 +5184,10 @@ usage) or restart \fBffmpeg\fR instance, cyclically changing
 .Ve
 .SS "mxf, mxf_d10, mxf_opatom"
 .IX Subsection "mxf, mxf_d10, mxf_opatom"
+The \f(CW\*(C`mxf_opatom\*(C'\fR muxer writes one clip-wrapped essence element.
+It does not accept ProRes or ancillary data, including EIA\-608 captions
+mapped to ANC. For ProRes, use \f(CW\*(C`\-f mxf\*(C'\fR when OP1a is suitable.
+.PP
 MXF muxer.
 .PP
 \fIOptions\fR
@@ -4951,6 +5258,16 @@ Write index at the end, the default is to write an index.
 .SS ogg
 .IX Subsection "ogg"
 Ogg container muxer.
+.PP
+A new link is started on new metadata or extradata of a single Vorbis, FLAC,
+Opus or Theora stream.
+Other outputs ignore new metadata.
+So does Theora on an inter frame.
+New extradata ends them at the current link.
+So does new Theora extradata that changes the frame rate.
+The packet carrying it and the ones that follow are dropped, and their writes
+still return success.
+New extradata on the first packet is ignored.
 .IP "\fB\-page_duration\fR \fIduration\fR" 4
 .IX Item "-page_duration duration"
 Preferred page duration, in microseconds. The muxer will attempt to create
@@ -4962,9 +5279,21 @@ situations, giving a small seek granularity at the cost of additional container
 overhead.
 .IP "\fB\-serial_offset\fR \fIvalue\fR" 4
 .IX Item "-serial_offset value"
-Serial value from which to set the streams serial number.
-Setting it to different and sufficiently large values ensures that the produced
-ogg files can be safely chained.
+Serial number of the first stream in bitexact mode, the others following
+consecutively.
+Chained links need distinct serial numbers, which disjoint ranges of values
+guarantee.
+The default of \-1 derives each serial number from the stream's headers
+instead.
+This makes links with different headers or tags unlikely to share a serial
+number, without ruling it out.
+Links with identical headers and tags always share one, which separately muxed
+outputs avoid with explicit offsets.
+.Sp
+A link the muxer starts itself on new stream metadata or extradata keeps the
+offset of the link before it.
+With an explicit offset it then reuses its serial number.
+With the default it does so when its headers and tags are unchanged.
 .SS pdv
 .IX Subsection "pdv"
 Playdate Video muxer.
@@ -5223,6 +5552,13 @@ Wrap around segment index once it reaches \fIlimit\fR.
 .IP "\fBsegment_start_number\fR \fInumber\fR" 4
 .IX Item "segment_start_number number"
 Set the sequence number of the first segment. Defaults to \f(CW0\fR.
+.IP "\fBsegment_wrap_number\fR \fInumber\fR" 4
+.IX Item "segment_wrap_number number"
+Set the number of times the segment index is assumed to have already wrapped
+when generating the indexes reported in the segment list. Together with
+\&\fBsegment_wrap\fR and \fBsegment_start_number\fR it offsets the reported
+index, which is computed as \f(CW\*(C`segment_start_number + segment_wrap *
+segment_wrap_number\*(C'\fR. Defaults to \f(CW0\fR.
 .IP "\fBstrftime\fR \fI1|0\fR" 4
 .IX Item "strftime 1|0"
 Use the \f(CW\*(C`strftime\*(C'\fR function to define the name of the new
@@ -5250,6 +5586,25 @@ argument must be a time duration specification, and defaults to 0.
 If enabled, write an empty segment if there are no packets during the period a
 segment would usually span. Otherwise, the segment will be filled with the next
 packet written. Defaults to \f(CW0\fR.
+.IP "\fBwrite_header_trailer\fR \fIbool\fR" 4
+.IX Item "write_header_trailer bool"
+Write a header to the first segment and a trailer to the last one, instead of
+writing a header and a trailer to every individual segment. Disabling it
+(\f(CW\*(C`false\*(C'\fR) also forces \fBindividual_header_trailer\fR to \f(CW\*(C`false\*(C'\fR,
+so that no segment is given a header or trailer. Default value is \f(CW\*(C`true\*(C'\fR.
+.IP "\fBindividual_header_trailer\fR \fIbool\fR" 4
+.IX Item "individual_header_trailer bool"
+If enabled, write a complete header and trailer to every segment, making each
+segment an independently usable file. If disabled (\f(CW\*(C`false\*(C'\fR), only the first
+segment is given a header and only the last one a trailer. It is forced to
+\&\f(CW\*(C`false\*(C'\fR when \fBwrite_header_trailer\fR is \f(CW\*(C`false\*(C'\fR or when
+\&\fBsegment_header_filename\fR is set. Default value is \f(CW\*(C`true\*(C'\fR.
+.IP "\fBsegment_header_filename\fR \fIname\fR" 4
+.IX Item "segment_header_filename name"
+Write the stream header to a separate file named \fIname\fR instead of storing
+it in the segments. Setting it forces \fBwrite_header_trailer\fR to
+\&\f(CW\*(C`true\*(C'\fR and \fBindividual_header_trailer\fR to \f(CW\*(C`false\*(C'\fR, so the
+header is written only once, to \fIname\fR. Unset by default.
 .PP
 Make sure to require a closed GOP when encoding and to set the GOP
 size to fit your segment time constraint.
@@ -5500,6 +5855,78 @@ character used to separate options.
 \&        ffmpeg \-i ... \-map 0 \-flags +global_header \-c:v libx264 \-c:a aac
 \&               \-f tee "[bsfs/v=dump_extra=freq=keyframe]out.ts|[movflags=+faststart]out.mp4|[select=\e\*(Aqa:1\e\*(Aq]out.aac"
 .Ve
+.SS wav
+.IX Subsection "wav"
+RIFF Wave Audio muxer.
+.PP
+\fIOptions\fR
+.IX Subsection "Options"
+.IP "\fBrf64\fR \fImode\fR" 4
+.IX Item "rf64 mode"
+Choose whether to use the RF64 file format instead of RIFF.
+RF64 allows files larger than 4 gigabytes, but RF64 support is not as
+universal as RIFF.
+.Sp
+The following modes are recognized:
+.RS 4
+.IP \fBauto\fR 4
+.IX Item "auto"
+Start writing a standard RIFF file to retain compatibility with non\-RF64\-aware
+software, but switch to RF64 if the output file grows larger than 4 gigabytes.
+Reserves a small amount of extra space in the header using a \f(CW\*(C`JUNK\*(C'\fR chunk,
+which should be ignored by all compliant RIFF readers, but some extremely
+simplistic WAV readers may be confused by this.
+.IP \fBalways\fR 4
+.IX Item "always"
+Always use the RF64 format regardless of file size. The output file will only
+be readable by RF64\-compatible software and is no longer a standard RIFF WAVE
+file.
+.IP \fBnever\fR 4
+.IX Item "never"
+Always use plain RIFF, never RF64. This mode is the most compatible with legacy
+software, but if the output file grows beyond 4 gigabytes, the 32\-bit size field
+in the \f(CW\*(C`data\*(C'\fR chunk will no longer be able to correctly represent the size,
+and most audio software will not be able to read some or all of the data.
+(The \fBwav\fR demuxer's \f(CW\*(C`ignore_length\*(C'\fR option can be used to recover such
+a file.)
+This is the default mode.
+.RE
+.RS 4
+.RE
+.IP "\fBwrite_bext\fR \fIbool\fR" 4
+.IX Item "write_bext bool"
+Add a Broadcast Wave Format \f(CW\*(C`BEXT\*(C'\fR chunk containing extended audio
+metadata if enabled. Defaults to false.
+.IP "\fBwrite_peak\fR \fImode\fR" 4
+.IX Item "write_peak mode"
+Add a Peak Envelope chunk (EBU Tech 3285 Supplement 3) if enabled.
+Defaults to off.
+.RS 4
+.IP \fBoff\fR 4
+.IX Item "off"
+Do not add the Peak Envelope chunk.
+.IP \fBon\fR 4
+.IX Item "on"
+Add the Peak Envelope chunk, calculating the peak values based on the
+\&\f(CW\*(C`peak_block_size\*(C'\fR, \f(CW\*(C`peak_format\*(C'\fR, and \f(CW\*(C`peak_ppv\*(C'\fR options.
+.IP \fBonly\fR 4
+.IX Item "only"
+Like \f(CW\*(C`on\*(C'\fR, but skip writing the actual audio data (no \f(CW\*(C`data\*(C'\fR
+chunk will be written to the file; only the Peak Envelope and other metadata
+chunks will be written.)
+.RE
+.RS 4
+.RE
+.IP "\fBpeak_block_size\fR \fIint\fR" 4
+.IX Item "peak_block_size int"
+Number of audio samples used to generate each peak frame, up to 65536.
+Default is 256.
+.IP "\fBpeak_format\fR \fIformat\fR" 4
+.IX Item "peak_format format"
+The format of the peak envelope data (1: uint8, 2: uint16). Default is 2 (uint16).
+.IP "\fBpeak_ppv\fR \fIint\fR" 4
+.IX Item "peak_ppv int"
+Number of peak points per peak value (1 or 2). Default is 2.
 .SS webm_chunk
 .IX Subsection "webm_chunk"
 WebM Live Chunk Muxer.

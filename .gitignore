@@ -16,3 +16,8 @@ amilton_db/
 osaka_db/
 *.json
 cookies.txt
+
+# System-provided FFmpeg binaries
+/bin/bin/ffmpeg
+/bin/bin/ffplay
+/bin/bin/ffprobe

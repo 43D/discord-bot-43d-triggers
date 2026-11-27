@@ -283,6 +283,10 @@ Workaround various bugs in microsoft broken decoders.
 .IP \fBtrunc\fR 4
 .IX Item "trunc"
 trancated frames
+.IP \fBh264_dp_nnz\fR 4
+.IX Item "h264_dp_nnz"
+H.264 nC derivation for partitioned slices, as done by JM rather than by
+9.2.1 (autodetected)
 .RE
 .RS 4
 .RE
@@ -1019,6 +1023,8 @@ Set max macroblock lagrange factor (VBR).
 .PD 0
 .IP "\fBskip_idct\fR        \fIinteger\fR \fB(\fR\fIdecoding,video\fR\fB)\fR" 4
 .IX Item "skip_idct integer (decoding,video)"
+.IP "\fBskip_pred\fR        \fIinteger\fR \fB(\fR\fIdecoding,video\fR\fB)\fR" 4
+.IX Item "skip_pred integer (decoding,video)"
 .IP "\fBskip_frame\fR       \fIinteger\fR \fB(\fR\fIdecoding,video\fR\fB)\fR" 4
 .IX Item "skip_frame integer (decoding,video)"
 .PD
@@ -1026,7 +1032,14 @@ Make decoder discard processing depending on the frame type selected
 by the option value.
 .Sp
 \&\fBskip_loop_filter\fR skips frame loop filtering, \fBskip_idct\fR
-skips frame IDCT/dequantization, \fBskip_frame\fR skips decoding.
+skips frame IDCT/dequantization, \fBskip_pred\fR skips prediction
+(intra prediction and motion compensation), \fBskip_frame\fR skips
+decoding.
+.Sp
+With both \fBskip_pred\fR and \fBskip_idct\fR set to \fBall\fR
+the decoder may skip all pixel operations and output frames with
+undefined pixels but valid metadata, such as timestamps and frame
+types.
 .Sp
 Possible values:
 .RS 4
@@ -1463,6 +1476,9 @@ Default is 1 (enabled).
 Note: The required alignment depends on if \f(CW\*(C`AV_CODEC_FLAG_UNALIGNED\*(C'\fR is set and the
 CPU. \f(CW\*(C`AV_CODEC_FLAG_UNALIGNED\*(C'\fR cannot be changed from the command line. Also hardware
 decoders will not apply left/top Cropping.
+.IP "\fBlcevc-dec-params\fR \fIstring\fR \fB(\fR\fIdecoding,video\fR\fB)\fR" 4
+.IX Item "lcevc-dec-params string (decoding,video)"
+A :\-separated list of key=value parameters passed to liblcevc-dec to initialize it.
 .SH DECODERS
 .IX Header "DECODERS"
 Decoders are configured elements in FFmpeg which allow the decoding of
@@ -1535,6 +1551,21 @@ the corresponding elements of \fBview_ids_available\fR, i.e.
 .Sp
 Same validity restrictions as for \fBview_ids_available\fR apply to
 this option.
+.IP \fBtile_interleave\fR 4
+.IX Item "tile_interleave"
+Decode pictures split into tile columns in CTB row order rather than in tile
+scan order, so that frame threading keeps overlapping. With the tile scan the
+lower CTB rows are published only once the last tile column has been decoded,
+which stalls the frames waiting for them. Only the order in which the CTBs are
+decoded changes, the output is the same.
+.Sp
+The default of \-1 takes this order for eligible pictures when frame threading is
+in use, 0 disables it, and 1 takes it for eligible pictures even without frame
+threading. A picture is eligible when it has two or more tile columns, does not
+use entropy coding synchronization and packs its tiles into slices in a layout
+the traversal supports. Every other picture is decoded in tile scan order as
+before. With slice threading, a picture whose tiles are all carried in one
+slice is still decoded tile-parallel, whatever this option is set to.
 .SS rawvideo
 .IX Subsection "rawvideo"
 Raw video decoder.
@@ -1559,6 +1590,40 @@ top-field-first is assumed
 .RE
 .RS 4
 .RE
+.SS libastcenc
+.IX Subsection "libastcenc"
+ARM ASTC Encoder wrapper for decoding ASTC textures.
+.PP
+This decoder requires the Arm ASTC Encoder (astc-encoder) library version
+5.4 or newer, installed as \f(CW\*(C`astcenc/astcenc.h\*(C'\fR next to a library that
+\&\f(CW\*(C`\-lastcenc\*(C'\fR finds. Pass \f(CW\*(C`\-\-enable\-version3\*(C'\fR together with
+\&\f(CW\*(C`\-\-enable\-libastcenc\*(C'\fR to configure.
+.PP
+The \fI.astc\fR header does not record the intended decoding profile.
+Individual blocks identify their endpoint encodings, but this does not
+establish the sRGB versus linear interpretation. The decoder therefore uses
+the container metadata or \fBdec_profile\fR: a KTX sRGB texture is decoded
+as \f(CW\*(C`ldr\-srgb\*(C'\fR, while a KTX texture in the linear format is sampled with
+HDR precision (\f(CW\*(C`hdr\-ldr\-a\*(C'\fR, half-float output) because the linear GL
+internal format says nothing about LDR. A raw \f(CW\*(C`.astc\*(C'\fR file carries no
+profile at all, so it falls back to \f(CW\*(C`ldr\-srgb\*(C'\fR; use \fBdec_profile\fR
+for a raw HDR image:
+.PP
+.Vb 1
+\&        ffmpeg \-dec_profile hdr\-ldr\-a \-i input.astc output.png
+.Ve
+.PP
+\fIOptions\fR
+.IX Subsection "Options"
+.IP "\fBdec_profile\fR \fIint\fR" 4
+.IX Item "dec_profile int"
+Color profile to decode with, overriding the container metadata. It must
+match the profile the texture was encoded with: \f(CW\*(C`astcenc\*(C'\fR substitutes
+a fixed magenta error color for blocks whose endpoints do not fit the
+selected profile. The values are \f(CW\*(C`ldr\*(C'\fR, \f(CW\*(C`ldr\-srgb\*(C'\fR,
+\&\f(CW\*(C`hdr\-ldr\-a\*(C'\fR and \f(CW\*(C`hdr\*(C'\fR. Without this option the profile published
+by the container is used; a raw \fI.astc\fR stream, which publishes none,
+falls back to \f(CW\*(C`ldr\-srgb\*(C'\fR.
 .SS libdav1d
 .IX Subsection "libdav1d"
 dav1d AV1 decoder.
@@ -1723,6 +1788,23 @@ Loud sounds are fully compressed.  Soft sounds are enhanced.
 .RE
 .RS 4
 .RE
+.SS dca
+.IX Subsection "dca"
+DCA (DTS Coherent Acoustics) audio decoder, including the DTS-HD extensions.
+.PP
+\fIDCA Decoder Options\fR
+.IX Subsection "DCA Decoder Options"
+.IP "\fB\-downmix\fR \fIchannel_layout\fR" 4
+.IX Item "-downmix channel_layout"
+Request a smaller channel layout from the decoder: \fBstereo\fR,
+\&\fB5.0(side)\fR, \fB5.1(side)\fR or \fB7.1\fR.
+.Sp
+A DTS:X stream in the standard presentation decodes to 7.1.4 by default. Its
+four height channels are carried in an extension at the end of each lossless
+(XLL) frame, and the encoder also folds them into the 7.1 bed, so the decoder
+removes them from the bed when it outputs them. Requesting \fB7.1\fR outputs
+the bed as coded instead, with the heights folded in, and so does every
+smaller layout. A \fB7.1\fR request has no effect on other streams.
 .SS flac
 .IX Subsection "flac"
 FLAC audio decoder.
@@ -1810,6 +1892,13 @@ configuration. You need to explicitly configure the build with
 .PP
 An FFmpeg native decoder for Opus exists, so users can decode Opus
 without this library.
+.SS pcm_dvda
+.IX Subsection "pcm_dvda"
+PCM DVD-Audio decoder.
+.PP
+Decodes the LPCM variant stored in DVD-Audio AOB files. Unlike DVD-Video
+LPCM it supports sample rates up to 192 kHz and allows splitting the
+channels into two groups with different quantization.
 .SH "SUBTITLES DECODERS"
 .IX Header "SUBTITLES DECODERS"
 .SS libaribb24
@@ -2171,6 +2260,13 @@ Set bit rate in bits/s. Setting this automatically activates constant bit rate
 Set quality for variable bit rate (VBR) mode. This option is valid only using
 the \fBffmpeg\fR command-line tool. For library interface users, use
 \&\fBglobal_quality\fR.
+.Sp
+With the default \fBnmr\fR coder, VBR holds a constant noise-to-mask target
+and lets the bitrate follow the content. Higher values are finer: \f(CW1\fR
+lands near 128 kbps for typical stereo music, and each doubling of the value
+raises the rate by roughly a third; values above about 6 make no further
+difference. A quality setting takes precedence over \fBb\fR and
+\&\fBaac_rc\fR.
 .IP \fBcutoff\fR 4
 .IX Item "cutoff"
 Set cutoff frequency. If unspecified will allow the encoder to dynamically
@@ -2203,6 +2299,24 @@ Constant quantizer method.
 Uses a cheaper version of twoloop algorithm that doesn't try to do as many
 clever adjustments. Worse with low bitrates (less than 64kbps), but is better
 and much faster at higher bitrates.
+.RE
+.RS 4
+.RE
+.IP \fBaac_rc\fR 4
+.IX Item "aac_rc"
+Rate-control mode of the \fBnmr\fR coder when a bitrate is set with \fBb\fR
+(other coders ignore it; \fBq\fR takes precedence). Possible values:
+.RS 4
+.IP \fBcbr\fR 4
+.IX Item "cbr"
+Constant bitrate within the decoder's bit reservoir. This is the default.
+.IP \fBabr\fR 4
+.IX Item "abr"
+Average bitrate: a constant-quality target, as in VBR, whose set-point a slow
+servo moves to meet \fBb\fR over the length of the stream. Local quality
+stays constant, so short files and individual passages can deviate from the
+requested rate; the average converges over minutes rather than seconds. Below
+roughly 56 kbps stereo the rate lands above the request; use \fBcbr\fR there.
 .RE
 .RS 4
 .RE
@@ -3107,6 +3221,56 @@ High-Efficiency AAC profile:
 .Vb 1
 \&        ffmpeg \-i input.wav \-c:a libfdk_aac \-profile:a aac_he \-b:a 64k output.m4a
 .Ve
+.SS libfdk-xhe-aac
+.IX Subsection "libfdk-xhe-aac"
+libfdk-xhe-aac (Extended High-Efficiency Advanced Audio Coding) encoder wrapper.
+.PP
+The libfdk-xhe-aac library is based on the Fraunhofer FDK Extended High
+Efficiency AAC Encoder Software code from the Android project.
+.PP
+Requires the presence of the libfdk-xhe-aac headers and library during
+configuration. You need to explicitly configure the build with
+\&\f(CW\*(C`\-\-enable\-libfdk\-xhe\-aac\*(C'\fR. The library is also incompatible with GPL,
+so if you allow the use of GPL, you should configure with
+\&\f(CW\*(C`\-\-enable\-gpl \-\-enable\-nonfree \-\-enable\-libfdk\-xhe\-aac\*(C'\fR.
+.PP
+\fIOptions\fR
+.IX Subsection "Options"
+.PP
+The following are private options of the libfdk_xhe_aac encoder.
+.IP \fBvbr\fR 4
+.IX Item "vbr"
+Set VBR mode, from 0 to 6. 0 is lowest quality and 6 is highest quality.
+A value of \-1 will disable VBR, and CBR (Constant Bit Rate) is enabled.
+.Sp
+If not set, the default is CBR.
+.IP \fBlive_loudness_level\fR 4
+.IX Item "live_loudness_level"
+Set the expected loudness level of the stream, between \-31 and \-10
+dB LUFS. Defaults to \-24 dB LUFS if not set.
+.IP \fBrap_length\fR 4
+.IX Item "rap_length"
+The duration between encoded Random Access Points in the bitstream.
+.IP \fBstream_id\fR 4
+.IX Item "stream_id"
+A unique ID of the encoded stream within an adaptation set. The ID
+is embedded into the encoded bitstream.
+.Sp
+If not set, the encoder tries to generate a hopefully unique ID for
+the stream.
+.PP
+In order to do two pass encoding (where the first pass measures the
+loudness of the stream, and the second pass uses that information
+for accurately preserving the dynamics of the stream), invoke ffmpeg
+e.g. like this:
+.PP
+.Vb 2
+\&        ffmpeg \-i input.wav \-c:a libfdk_xhe_aac \-pass 1 \-f null \-
+\&        ffmpeg \-i input.wav \-c:a libfdk_xhe_aac \-pass 2 out.m4a
+.Ve
+.PP
+Doing two pass encoding is the recommended way to use the libfdk_xhe_aac
+encoder.
 .SS liblc3
 .IX Subsection "liblc3"
 liblc3 LC3 (Low Complexity Communication Codec) encoder wrapper.
@@ -3193,6 +3357,12 @@ while producing the worst quality.
 .IX Item "cutoff (--lowpass)"
 Set lowpass cutoff frequency. If unspecified, the encoder dynamically
 adjusts the cutoff.
+.IP "\fBstrict (\fR\fI\-\-strictly\-enforce\-ISO\fR\fB)\fR" 4
+.IX Item "strict (--strictly-enforce-ISO)"
+Enable LAME's strict ISO buffer constraints when set to \fBstrict\fR or
+\&\fBvery\fR. Other values leave LAME's default buffer constraints unchanged.
+This can improve compatibility with some decoders, at the cost of reduced
+bit reservoir usage.
 .IP \fBreservoir\fR 4
 .IX Item "reservoir"
 Enable use of bit reservoir when set to 1. Default value is 1. LAME
@@ -3576,6 +3746,16 @@ Compute and use optimal huffman tables.
 .RE
 .RS 4
 .RE
+.IP "\fBintra_dc_precision\fR \fIinteger\fR" 4
+.IX Item "intra_dc_precision integer"
+Set the precision of the DC coefficient minus 8. Valid range is 0 to 3.
+Higher values quantize DC more finely as the DC entry of the written
+quantization table is 8 >> \fIintra_dc_precision\fR so 3 gives a DC
+quantizer of 1. Default is 0 which keeps the previous fixed DC
+quantizer of 8.
+.Sp
+Combined with \f(CW\*(C`\-q:v 1\*(C'\fR and an \f(CW\*(C`intra_matrix\*(C'\fR of all 8s,
+a value of 3 produces a quantization table of all ones.
 .SS wavpack
 .IX Subsection "wavpack"
 WavPack lossless audio encoder.
@@ -3723,7 +3903,9 @@ FFv1 Encoder
 The following options are supported by FFmpeg's FFv1 encoder.
 .IP \fBcontext\fR 4
 .IX Item "context"
-Sets the context size, 0 (default) is small, 1 is big.
+Sets the context size, 0 (default) is small, 1 is big, 2 is minimal.
+The minimal context set compresses better when coding many slices, as each
+slice has too little data for larger context sets to adapt to.
 .IP \fBcoder\fR 4
 .IX Item "coder"
 Set the coder,
@@ -4238,6 +4420,38 @@ Enable interintra compound. Default is true.
 .IP "\fBenable-smooth-interintra (\fR\fIboolean\fR\fB) (Requires libaom >= v2.0.0)\fR" 4
 .IX Item "enable-smooth-interintra (boolean) (Requires libaom >= v2.0.0)"
 Enable smooth interintra mode. Default is true.
+.IP "\fBqpfile\fR \fIfilename\fR" 4
+.IX Item "qpfile filename"
+Read per-frame QP offsets from \fIfilename\fR and pass them to libaom as
+a region-of-interest map. libaom applies the map only in one-pass encoding
+with \fBusage\fR \fBrealtime\fR, an effective \fBcpu-used\fR of at
+least 7, and \fBlag-in-frames\fR 0, the default for realtime usage;
+other settings are refused. Speeds above 8 can be selected through
+\&\fBaom-params\fR when supported by the linked libaom.
+.Sp
+The file is plain text. Each record starts with a header line
+\&\fIframe\fR\fB \fR\fItype\fR\fB \fR\fIqp\fR, where \fIframe\fR is the 0\-based
+input frame number, strictly increasing from record to record.
+\&\fItype\fR is \fBI\fR, \fBP\fR or \fBB\fR in either case, and
+\&\fIqp\fR is an integer from 0 to 63; both are checked but not used.
+Frame numbers go up to 4294967295, and a file holds at most 1048576 records.
+Zero or more lines of whitespace-separated integer offsets follow,
+one line per row of 16x16 blocks and one value per block column; the grid
+must match the video size rounded up to 16 pixels. Offsets are clipped to
+the range \-12 to 12. Lines holding only spaces or tabs and lines starting with
+\&\fB#\fR are skipped; a line with a NUL byte is refused. A frame uses the last
+record whose number is not greater than its own; a record without offset lines,
+or no record yet, clears the map. libaom takes at most 8 distinct offsets per
+frame; when a frame holds more, they are quantized to 8 evenly spaced values.
+The offsets are deltas on libaom's 0 to 63 quantizer scale; libaom converts each
+to a quantizer index delta, so an offset of 12 becomes 48. While a map is
+enabled, libaom does not run its cyclic-refresh adaptive quantization
+(\fBaq-mode\fR 3). Up to at least version 3.15.3, libaom checks each
+distinct offset of a frame against the quantizer index of the previous one
+instead of the frame's base index, so near the ends of the quantizer index
+range an offset can be changed or dropped.
+.Sp
+Requires at least libaom 3.13.0.
 .IP \fBaom-params\fR 4
 .IX Item "aom-params"
 Set libaom options using a list of \fIkey\fR=\fIvalue\fR pairs separated
@@ -4366,6 +4580,51 @@ Set log2 of the number of rows of tiles to use (0\-6).
 .IP \fBtile_columns\fR 4
 .IX Item "tile_columns"
 Set log2 of the number of columns of tiles to use (0\-4).
+.IP "\fBqpfile\fR \fIfilename\fR" 4
+.IX Item "qpfile filename"
+Read per-frame QP offsets from \fIfilename\fR and pass them to SVT\-AV1 as
+region-of-interest map events. SVT\-AV1 applies the maps only with CRF or
+constant-QP rate control, so the option is refused unless the effective
+rate-control mode is 0: a target bit rate set with \fBb\fR selects
+another mode unless \fBcrf\fR or \fBqp\fR is also set above 0, and
+\&\fBrc\fR in \fBsvtav1\-params\fR overrides both. Internal scaling, a
+\&\fBsuperres-mode\fR or \fBresize-mode\fR other than 0 in
+\&\fBsvtav1\-params\fR, is refused too: SVT\-AV1 would apply the map to the
+scaled frame with the layout of the full-size frame, moving the offsets to
+other superblocks. The first pass of a two-pass encode, the \f(CW\*(C`pass1\*(C'\fR
+flag or \fBpass=1\fR in \fBsvtav1\-params\fR, is refused as well:
+SVT\-AV1 can encode that pass at a reduced size and would then read the map
+with the layout of the reduced frame.
+.Sp
+The file is plain text. Each record starts with a header line
+\&\fIframe\fR\fB \fR\fItype\fR\fB \fR\fIqp\fR, where \fIframe\fR is the 0\-based
+input frame number, strictly increasing from record to record.
+\&\fItype\fR is \fBI\fR, \fBP\fR or \fBB\fR in either case, and
+\&\fIqp\fR is an integer from 0 to 63; both are checked but not used.
+Frame numbers go up to 4294967295, and a file holds at most 1048576 records.
+Zero or more lines of whitespace-separated integer offsets follow,
+one line per row of 16x16 blocks and one value per block column; the grid
+must match the video size rounded up to 16 pixels. Offsets are clipped to
+the range \-12 to 12. Lines holding only spaces or tabs and lines starting with
+\&\fB#\fR are skipped; a line with a NUL byte is refused. A frame uses the last
+record whose number is not greater than its own. SVT\-AV1 keeps each map
+until the next event, so an event is sent only when the record a frame uses
+differs from the one last sent, normally on the frame of the record; a
+record without offset lines sends a neutral map. The offsets are AV1
+quantizer index deltas, so the same offset changes the quality less than
+with libaom\-av1.
+.Sp
+The ROI map contains one value per 64x64 cell: the offsets of up to
+sixteen 16x16 blocks are averaged, and each frame's averages are mapped
+to at most 8 segment values. A region smaller than a cell can disappear
+through averaging. When SVT\-AV1 uses 128x128 superblocks, a coded block
+spanning multiple map cells selects the coarsest mapped offset among
+those cells, subject to the library's quantizer-range adjustments.
+The maps replace SVT\-AV1's segmentation-based adaptive quantization
+(\fBaq\-mode=1\fR) for the rest of the encode: a neutral map ends the
+offsets but does not bring that adaptive quantization back.
+.Sp
+Requires at least SVT\-AV1 1.6.0.
 .IP \fBsvtav1\-params\fR 4
 .IX Item "svtav1-params"
 Set SVT\-AV1 options using a list of \fIkey\fR=\fIvalue\fR pairs separated
@@ -5083,6 +5342,106 @@ Text-like
 .RE
 .RS 4
 .RE
+.SS libastcenc
+.IX Subsection "libastcenc"
+ARM ASTC Encoder wrapper.
+.PP
+This encoder requires the Arm ASTC Encoder (astc-encoder) library version
+5.4 or newer, which provides high-quality GPU texture compression to the
+ASTC format, installed as \f(CW\*(C`astcenc/astcenc.h\*(C'\fR next to a library that
+\&\f(CW\*(C`\-lastcenc\*(C'\fR finds. Pass \f(CW\*(C`\-\-enable\-version3\*(C'\fR together with
+\&\f(CW\*(C`\-\-enable\-libastcenc\*(C'\fR to configure.
+.PP
+The encoder supports both LDR (8\-bit RGBA/RGB) and HDR (float/half RGBA)
+input. When float or half input is detected with an LDR profile, the
+profile is automatically promoted to HDR RGB with LDR alpha
+(\f(CW\*(C`HDR_RGB_LDR_A\*(C'\fR); an explicitly selected HDR profile is kept.
+.PP
+The raw bitstream can be packaged in the \fI.astc\fR container (16\-byte
+header + compressed blocks) or in the Khronos Texture 1.0 container
+(\fI.ktx\fR). This implementation writes LDR 2D textures only through the
+\&\fI.ktx\fR muxer: HDR ASTC and 3D block footprints are not supported by
+the muxer and \fI.astc\fR must be used for them instead. The KTX 1.0
+linear ASTC GL enums do not imply LDR either, so a linear \fI.ktx\fR
+texture may still hold HDR endpoints; such a texture is decoded with HDR
+precision by default.
+The \fI.ktx\fR muxer records its row order in a \f(CW\*(C`KTXorientation\*(C'\fR key.
+.PP
+\fIPixel Format\fR
+.IX Subsection "Pixel Format"
+.PP
+The encoder accepts the following pixel formats:
+.ie n .IP "*<""rgba"" \-\- 8\-bit packed RGBA (LDR).>" 4
+.el .IP "*<\f(CWrgba\fR \-\- 8\-bit packed RGBA (LDR).>" 4
+.IX Item "*<rgba -- 8-bit packed RGBA (LDR).>"
+.PD 0
+.ie n .IP "*<""rgb24"" \-\- 8\-bit packed RGB (LDR, opaque alpha synthesized).>" 4
+.el .IP "*<\f(CWrgb24\fR \-\- 8\-bit packed RGB (LDR, opaque alpha synthesized).>" 4
+.IX Item "*<rgb24 -- 8-bit packed RGB (LDR, opaque alpha synthesized).>"
+.ie n .IP "*<""rgbaf16"" \-\- 16\-bit floating-point RGBA (HDR).>" 4
+.el .IP "*<\f(CWrgbaf16\fR \-\- 16\-bit floating-point RGBA (HDR).>" 4
+.IX Item "*<rgbaf16 -- 16-bit floating-point RGBA (HDR).>"
+.ie n .IP "*<""rgbaf32"" \-\- 32\-bit floating-point RGBA (HDR).>" 4
+.el .IP "*<\f(CWrgbaf32\fR \-\- 32\-bit floating-point RGBA (HDR).>" 4
+.IX Item "*<rgbaf32 -- 32-bit floating-point RGBA (HDR).>"
+.ie n .IP "*<""gbrapf32"" \-\- planar 32\-bit floating-point GBR+Alpha (HDR).>" 4
+.el .IP "*<\f(CWgbrapf32\fR \-\- planar 32\-bit floating-point GBR+Alpha (HDR).>" 4
+.IX Item "*<gbrapf32 -- planar 32-bit floating-point GBR+Alpha (HDR).>"
+.PD
+.PP
+swscale cannot convert \fIto\fR the packed floating-point formats
+(\f(CW\*(C`rgbaf16\*(C'\fR, \f(CW\*(C`rgbaf32\*(C'\fR); to encode ordinary image formats as HDR,
+produce a planar floating-point source instead, for example with
+\&\f(CW\*(C`\-vf format=gbrapf32\*(C'\fR. The packed formats are accepted when they are
+supplied directly, such as from a decoder or a custom filter graph.
+.PP
+\fIOptions\fR
+.IX Subsection "Options"
+.IP "\fBblock_size\fR \fIstring\fR" 4
+.IX Item "block_size string"
+ASTC block size specified as \fIW\fRx\fIH\fR[\f(CW\*(C`x\*(C'\fR\fID\fR].
+When the third dimension is omitted it defaults to 1 (2D block).
+Valid 2D: 4x4, 5x4, 5x5, 6x5, 6x6, 8x5, 8x6, 8x8, 10x5, 10x6,
+10x8, 10x10, 12x10, 12x12.  Valid 3D: 3x3x3, 4x3x3, 4x4x3, 4x4x4,
+5x4x4, 5x5x4, 5x5x5, 6x5x5, 6x6x5, 6x6x6.
+Default is \f(CW\*(C`8x8\*(C'\fR.
+.IP "\fBquality\fR \fIfloat\fR" 4
+.IX Item "quality float"
+Compression quality from 0 (fastest) to 100 (slowest, exhaustive search).
+Default is \f(CW60\fR.
+.IP "\fBprofile\fR \fIint\fR" 4
+.IX Item "profile int"
+Color profile. Possible values:
+.RS 4
+.IP \fBldr\fR 4
+.IX Item "ldr"
+Linear LDR.
+.IP \fBldr-srgb\fR 4
+.IX Item "ldr-srgb"
+sRGB LDR (default).
+.IP \fBhdr-ldr-a\fR 4
+.IX Item "hdr-ldr-a"
+HDR RGB channels with LDR alpha channel.
+.IP \fBhdr\fR 4
+.IX Item "hdr"
+Full HDR.
+.RE
+.RS 4
+.Sp
+When float/half input is detected with an LDR profile, the profile is
+automatically promoted to \f(CW\*(C`hdr\-ldr\-a\*(C'\fR. Conversely, selecting an HDR
+profile with 8\-bit input is rejected.
+This option overrides \f(CW\*(C`AVCodecContext.profile\*(C'\fR. When it is not set, the
+profile is taken from \f(CW\*(C`AVCodecContext.profile\*(C'\fR (\f(CW\*(C`AV_PROFILE_ASTC_*\*(C'\fR),
+where \f(CW\*(C`AV_PROFILE_UNKNOWN\*(C'\fR selects \f(CW\*(C`ldr\-srgb\*(C'\fR as before.
+.RE
+.IP "\fBperceptual\fR \fIboolean\fR" 4
+.IX Item "perceptual boolean"
+Use the perceptual (PSNR-weighted) error metric instead of peak-SNR.
+Default is \f(CW0\fR.
+.IP "\fBalpha_weight\fR \fIboolean\fR" 4
+.IX Item "alpha_weight boolean"
+Enable per-texel alpha weighting. Default is \f(CW1\fR.
 .SS "libx264, libx264rgb"
 .IX Subsection "libx264, libx264rgb"
 x264 H.264/MPEG\-4 AVC encoder wrapper.
@@ -5493,6 +5852,39 @@ Constant bit rate (not allowed in MP4 container).
 .RE
 .RS 4
 .RE
+.IP "\fBqpfile\fR \fIfilename\fR" 4
+.IX Item "qpfile filename"
+Read per-frame macroblock QP offsets from \fIfilename\fR and pass them to
+x264 as quantizer offsets. x264 applies the offsets through adaptive
+quantization; the option is refused when x264 runs without adaptive
+quantization, that is with constant QP, or with \fBaq-mode\fR 0 or
+\&\fBaq-strength\fR 0 while \fBmbtree\fR is off; it is also refused
+with interlaced or fake-interlaced encoding.
+.Sp
+The file is plain text. Each record starts with a header line
+\&\fIframe\fR\fB \fR\fItype\fR\fB \fR\fIqp\fR, where \fIframe\fR is the 0\-based
+input frame number, strictly increasing from record to record.
+\&\fItype\fR is \fBI\fR, \fBP\fR or \fBB\fR in either case, and
+\&\fIqp\fR is an integer from 0 to 63; both are checked but not used.
+Frame numbers go up to 4294967295, and a file holds at most 1048576 records.
+Zero or more lines of whitespace-separated integer offsets follow, one
+line per row of 16x16 macroblocks and one value per macroblock column; the
+grid must match the video size rounded up to 16 pixels. Offsets are clipped
+to the range \-12 to 12. Lines holding only spaces or tabs and lines starting
+with \fB#\fR are skipped; a line with a NUL byte is refused. A frame uses
+the last record whose number is not greater than its own; a record without
+offset lines ends the offsets.
+.Sp
+On a frame that also carries region-of-interest side data
+(\f(CW\*(C`AV_FRAME_DATA_REGIONS_OF_INTEREST\*(C'\fR, for example from the
+\&\f(CW\*(C`addroi\*(C'\fR filter), the offsets are added to the per-macroblock
+quantizer offsets that the encoder builds from that side data. A record
+without offset lines leaves those region offsets unchanged.
+.Sp
+This is not the format of the x264 command-line \fB\-\-qpfile\fR
+option, which sets frame types and QPs; the type \fBK\fR of that format
+is refused here. In two-pass encoding, give both passes the same file:
+x264 leaves the result undefined when the offsets differ between passes.
 .IP "\fBx264opts\fR \fIopts\fR" 4
 .IX Item "x264opts opts"
 .PD 0
@@ -6154,9 +6546,14 @@ Select the mpeg2 level to encode:
 .RE
 .RS 4
 .RE
+.IP "\fBseq_end\fR \fIboolean\fR" 4
+.IX Item "seq_end boolean"
+.PD
+Write a sequence end code after the last picture. Disabled by default.
+Cannot be combined with \fBflags +low_delay\fR or frame skipping
+(\fBskip_threshold\fR or \fBskip_factor\fR).
 .IP "\fBseq_disp_ext\fR \fIinteger\fR" 4
 .IX Item "seq_disp_ext integer"
-.PD
 Specifies if the encoder should write a sequence_display_extension to the
 output.
 .RS 4
@@ -6195,6 +6592,902 @@ For maximum compatibility, use \fBcomponent\fR.
 .IX Item "a53cc boolean"
 Import closed captions (which must be ATSC compatible format) into output.
 Default is 1 (on).
+.SS "NVENC encoders"
+.IX Subsection "NVENC encoders"
+The \f(CW\*(C`h264_nvenc\*(C'\fR, \f(CW\*(C`hevc_nvenc\*(C'\fR and \f(CW\*(C`av1_nvenc\*(C'\fR encoders use
+NVIDIA NVENC hardware to encode H.264, HEVC and AV1 video, respectively.
+Building them requires the \f(CW\*(C`ffnvcodec\*(C'\fR headers provided by
+<\fBhttps://code.ffmpeg.org/FFmpeg/nv\-codec\-headers\fR>.
+They are autodetected by configure; they can also be enabled explicitly
+with \fB\-\-enable\-ffnvcodec\fR and \fB\-\-enable\-nvenc\fR.
+.PP
+Available options and values depend on the SDK version exposed by the headers
+at build time. Feature checks in \fIlibavcodec/nvenc.h\fR distinguish SDK
+versions 12.0, 12.1, 12.2, 13.0 and 13.1. Runtime support also depends on the
+GPU and driver. Use \fBffmpeg \-h encoder=hevc_nvenc\fR, or substitute
+\&\f(CW\*(C`h264_nvenc\*(C'\fR or \f(CW\*(C`av1_nvenc\*(C'\fR, to list the options, devices and pixel
+formats available in a particular build.
+.PP
+\fIHardware input and devices\fR
+.IX Subsection "Hardware input and devices"
+.PP
+These encoders accept system-memory frames and CUDA hardware frames
+(\f(CW\*(C`AV_PIX_FMT_CUDA\*(C'\fR). Builds using SDK 13.1 or newer also accept CUDA array
+frames (\f(CW\*(C`AV_PIX_FMT_CUARRAY\*(C'\fR). Builds with \f(CW\*(C`d3d11va\*(C'\fR support accept
+D3D11 hardware frames (\f(CW\*(C`AV_PIX_FMT_D3D11\*(C'\fR). The input pixel format and
+encoding features must be supported by the selected GPU.
+.PP
+For CUDA decoding followed by encoding, use the input options
+\&\fB\-hwaccel cuda \-hwaccel_output_format cuda\fR to keep decoded frames on
+the device. A hardware device can also be created with \fB\-init_hw_device\fR
+and supplied to the encoder, directly or through its hardware frames context.
+For system-memory input without a supplied hardware device, the encoder
+option \fBgpu\fR selects the device. See its entry under
+\&\fBOther common options\fR below.
+.PP
+\fIGeneric options\fR
+.IX Subsection "Generic options"
+.PP
+Several generic encoding options are mapped to NVENC settings. The bitrate
+options \fBb\fR, \fBmaxrate\fR and \fBbufsize\fR set the average
+bitrate, the maximum bitrate and the VBV buffer size; the NVENC default for
+\&\fBb\fR is \fB2M\fR. \fBg\fR sets the GOP length, with 0 requesting
+intra-only encoding. \fBbf\fR sets the number of B\-frames between
+non-B-frames. \fBrefs\fR sets the number of reference frames in each
+reference list. \fBg\fR and \fBbf\fR default to \f(CW\-1\fR and
+\&\fBrefs\fR defaults to 0; these defaults leave the values of the preset
+unchanged.
+.PP
+The generic \fBqmin\fR and \fBqmax\fR options are honoured in VBR mode
+with a warning; API users should set the encoder options of the same names
+listed below instead.
+.PP
+Only applications calling the libavcodec API can change
+\&\f(CW\*(C`AVCodecContext.bit_rate\*(C'\fR, \f(CW\*(C`AVCodecContext.rc_max_rate\*(C'\fR and
+\&\f(CW\*(C`AVCodecContext.rc_buffer_size\*(C'\fR during encoding. The encoder checks
+these fields before encoding each frame. When dynamic bitrate changes are
+supported and rate control is not \fBconstqp\fR, changed positive values
+trigger reconfiguration, reset the encoder and force an IDR.
+A change to the display aspect ratio also triggers reconfiguration.
+.PP
+\fICommon options\fR
+.IX Subsection "Common options"
+.PP
+The following option names are shared by all three encoders. Differences in
+values and build requirements are noted below. Boolean options accept 0
+(disabled) and 1 (enabled), unless otherwise stated.
+.PP
+Presets and tuning
+.IX Subsection "Presets and tuning"
+.IP "\fBpreset\fR \fIinteger\fR" 4
+.IX Item "preset integer"
+Select the encoding preset using a named value from the table (recommended)
+or its integer. The range is \f(CW0\fR to \f(CW9\fR; the default is
+\&\fBp4\fR (6).
+.RS 4
+.IP \fBslow\fR 4
+.IX Item "slow"
+Deprecated alias for high quality with two passes (0).
+.IP \fBmedium\fR 4
+.IX Item "medium"
+Deprecated alias for high quality with one pass (1).
+.IP \fBfast\fR 4
+.IX Item "fast"
+Deprecated alias for high performance with one pass (2).
+.IP \fBp1\fR 4
+.IX Item "p1"
+Fastest, lowest quality (3).
+.IP \fBp2\fR 4
+.IX Item "p2"
+Faster, lower quality (4).
+.IP \fBp3\fR 4
+.IX Item "p3"
+Fast, low quality (5).
+.IP \fBp4\fR 4
+.IX Item "p4"
+Medium (6); the default.
+.IP \fBp5\fR 4
+.IX Item "p5"
+Slow, good quality (7).
+.IP \fBp6\fR 4
+.IX Item "p6"
+Slower, better quality (8).
+.IP \fBp7\fR 4
+.IX Item "p7"
+Slowest, best quality (9).
+.RE
+.RS 4
+.Sp
+Use \fBp1\fR through \fBp7\fR with \fBtune\fR and \fBmultipass\fR
+instead of the deprecated aliases.
+.RE
+.IP "\fBtune\fR \fIinteger\fR" 4
+.IX Item "tune integer"
+Select encoding tuning using a named value from the table (recommended)
+or its integer. The default is \fBhq\fR (1).
+.Sp
+H.264 accepts \f(CW1\fR to \f(CW4\fR; HEVC and AV1 also expose \fBuhq\fR when
+built with the required SDK.
+.RS 4
+.IP \fBhq\fR 4
+.IX Item "hq"
+High quality (1).
+.IP \fBll\fR 4
+.IX Item "ll"
+Low latency (2).
+.IP \fBull\fR 4
+.IX Item "ull"
+Ultra low latency (3).
+.IP \fBlossless\fR 4
+.IX Item "lossless"
+Lossless (4).
+.IP \fBuhq\fR 4
+.IX Item "uhq"
+Ultra high quality (5).
+.Sp
+HEVC requires SDK 12.2 or newer; AV1 requires SDK 13.0 or newer. Not available
+for H.264.
+.RE
+.RS 4
+.RE
+.PP
+Rate control
+.IX Subsection "Rate control"
+.IP "\fBrc\fR \fIinteger\fR" 4
+.IX Item "rc integer"
+Override preset rate control using a named value from the table
+(recommended) or its integer. The range is \f(CW\-1\fR to \f(CW\*(C`INT_MAX\*(C'\fR;
+the default is \f(CW\-1\fR (no explicit override).
+.RS 4
+.IP \fBconstqp\fR 4
+.IX Item "constqp"
+Constant QP (0).
+.IP \fBvbr\fR 4
+.IX Item "vbr"
+Variable bitrate (1).
+.IP \fBcbr\fR 4
+.IX Item "cbr"
+Constant bitrate (2).
+.RE
+.RS 4
+.RE
+.IP "\fBmultipass\fR \fIinteger\fR" 4
+.IX Item "multipass integer"
+Select multipass encoding using a named value from the table (recommended)
+or its integer. The range is \f(CW0\fR to \f(CW2\fR; the default is
+\&\fBdisabled\fR (0).
+.RS 4
+.IP \fBdisabled\fR 4
+.IX Item "disabled"
+Single pass (0).
+.IP \fBqres\fR 4
+.IX Item "qres"
+Two passes, with the first pass at quarter resolution (1).
+.IP \fBfullres\fR 4
+.IX Item "fullres"
+Two passes, with the first pass at full resolution (2).
+.RE
+.RS 4
+.RE
+.IP "\fBcq\fR \fIfloat\fR" 4
+.IX Item "cq float"
+Set the target quality for constant quality mode in VBR rate control.
+The default is 0 (automatic).
+.Sp
+The range is \f(CW0\fR to \f(CW51\fR for H.264 and HEVC, or \f(CW0\fR to
+\&\f(CW63\fR for AV1.
+.IP "\fBqp\fR \fIinteger\fR" 4
+.IX Item "qp integer"
+Set the constant quantization parameter. The default is \f(CW\-1\fR (unset).
+.Sp
+The range is \f(CW\-1\fR to \f(CW51\fR for H.264 and HEVC, or \f(CW\-1\fR to
+\&\f(CW255\fR for AV1.
+.IP "\fBinit_qpP\fR \fIinteger\fR" 4
+.IX Item "init_qpP integer"
+.PD 0
+.IP "\fBinit_qpB\fR \fIinteger\fR" 4
+.IX Item "init_qpB integer"
+.IP "\fBinit_qpI\fR \fIinteger\fR" 4
+.IX Item "init_qpI integer"
+.PD
+Set the initial QP for P\-, B\- and I\-frames, respectively. Each defaults to
+\&\f(CW\-1\fR (unset).
+.Sp
+The range is \f(CW\-1\fR to \f(CW51\fR for H.264 and HEVC, or \f(CW\-1\fR to
+\&\f(CW255\fR for AV1.
+.IP "\fBqmin\fR \fIinteger\fR" 4
+.IX Item "qmin integer"
+.PD 0
+.IP "\fBqmax\fR \fIinteger\fR" 4
+.IX Item "qmax integer"
+.PD
+Set the minimum and maximum QP used for rate control. Each defaults to
+\&\f(CW\-1\fR (unset).
+.Sp
+The range is \f(CW\-1\fR to \f(CW51\fR for H.264 and HEVC, or \f(CW\-1\fR to
+\&\f(CW255\fR for AV1.
+.IP "\fBqp_cb_offset\fR \fIinteger\fR" 4
+.IX Item "qp_cb_offset integer"
+.PD 0
+.IP "\fBqp_cr_offset\fR \fIinteger\fR" 4
+.IX Item "qp_cr_offset integer"
+.PD
+Set the chroma QP offsets for the Cb and Cr channels, respectively. Each
+accepts \f(CW\-12\fR to \f(CW12\fR and defaults to 0.
+.IP "\fBstrict_gop\fR \fIboolean\fR" 4
+.IX Item "strict_gop boolean"
+Minimize GOP-to-GOP rate fluctuations. The default is 0.
+.IP "\fBldkfs\fR \fIinteger\fR" 4
+.IX Item "ldkfs integer"
+Set the low-delay keyframe scale, which specifies the scene-change frame
+size increase allowed with a single-frame VBV buffer and CBR. The range is
+\&\f(CW0\fR to \f(CW255\fR and the default is 0.
+.IP "\fBcbr_padding\fR \fIboolean\fR" 4
+.IX Item "cbr_padding boolean"
+Pad the bitstream to prevent the bitrate falling below the target in CBR
+mode. The default is 0.
+.PP
+Lookahead, adaptive quantization and B\-frames
+.IX Subsection "Lookahead, adaptive quantization and B-frames"
+.IP "\fBrc-lookahead\fR \fIinteger\fR" 4
+.IX Item "rc-lookahead integer"
+Set the number of frames to look ahead for rate control. The range is \f(CW0\fR
+to \f(CW\*(C`INT_MAX\*(C'\fR and the default is 0.
+.IP "\fBlookahead_level\fR \fIinteger\fR" 4
+.IX Item "lookahead_level integer"
+Set the lookahead level using a named value from the table (recommended)
+or its integer. Higher levels may improve quality at the expense of
+performance. Requires SDK 12.2 or newer. The range is \f(CW\-1\fR to
+\&\f(CW15\fR; the default is \f(CW\-1\fR (no override).
+.RS 4
+.IP \fB0\fR 4
+.IX Item "0"
+.PD 0
+.IP \fB1\fR 4
+.IX Item "1"
+.IP \fB2\fR 4
+.IX Item "2"
+.IP \fB3\fR 4
+.IX Item "3"
+.PD
+Select the corresponding lookahead level.
+.IP \fBauto\fR 4
+.IX Item "auto"
+Automatic selection (15).
+.RE
+.RS 4
+.RE
+.IP "\fBno-scenecut\fR \fIboolean\fR" 4
+.IX Item "no-scenecut boolean"
+Disable adaptive I\-frame insertion at scene cuts when lookahead is enabled.
+The default is 0.
+.IP "\fBb_adapt\fR \fIboolean\fR" 4
+.IX Item "b_adapt boolean"
+Enable adaptive B\-frame decisions when lookahead is enabled. The default is 1.
+.IP "\fBspatial-aq\fR \fIboolean\fR" 4
+.IX Item "spatial-aq boolean"
+Enable spatial adaptive quantization. The default is 0.
+.IP "\fBtemporal-aq\fR \fIboolean\fR" 4
+.IX Item "temporal-aq boolean"
+Enable temporal adaptive quantization. The default is 0.
+.IP "\fBaq-strength\fR \fIinteger\fR" 4
+.IX Item "aq-strength integer"
+Set spatial adaptive quantization strength when \fBspatial-aq\fR is
+enabled, from \f(CW1\fR (low) to \f(CW15\fR (aggressive). The default is 8.
+.IP "\fBb_ref_mode\fR \fIinteger\fR" 4
+.IX Item "b_ref_mode integer"
+Select the use of B\-frames as references using a named value from the table
+(recommended) or its integer. The default is \f(CW\-1\fR (no override).
+.Sp
+H.264 and HEVC accept \f(CW\-1\fR to \f(CW2\fR. AV1 accepts \f(CW\-1\fR to
+\&\f(CW4\fR with SDK 13.1 or newer, or \f(CW\-1\fR to \f(CW2\fR with older headers.
+.RS 4
+.IP \fBdisabled\fR 4
+.IX Item "disabled"
+Do not use B\-frames as references (0).
+.IP \fBeach\fR 4
+.IX Item "each"
+Use each B\-frame as a reference (1).
+.IP \fBmiddle\fR 4
+.IX Item "middle"
+For H.264 and HEVC, use only half the B\-frames as references (2).
+.Sp
+For AV1, use every other B\-frame as an Altref2 reference (2), except the last
+in the Altref interval.
+.IP \fBhierarchical\fR 4
+.IX Item "hierarchical"
+Use B\-frames as references hierarchically (4).
+.Sp
+AV1 only; requires SDK 13.1 or newer.
+.RE
+.RS 4
+.RE
+.IP "\fBweighted_pred\fR \fIinteger\fR" 4
+.IX Item "weighted_pred integer"
+Enable weighted prediction with 1, or disable it with 0 (the default).
+.Sp
+This is a boolean option for AV1.
+.IP "\fBtf_level\fR \fIinteger\fR" 4
+.IX Item "tf_level integer"
+Set temporal filtering strength. The range is \f(CW\-1\fR to \f(CW\*(C`INT_MAX\*(C'\fR; the
+default is \f(CW\-1\fR (no override).
+.Sp
+Requires SDK 12.2 or newer for HEVC, or SDK 13.0 or newer for H.264 and AV1.
+.RS 4
+.IP \fB0\fR 4
+.IX Item "0"
+.PD 0
+.IP \fB4\fR 4
+.IX Item "4"
+.PD
+Select the corresponding temporal filtering strength.
+.RE
+.RS 4
+.RE
+.PP
+SEI and side data
+.IX Subsection "SEI and side data"
+.IP "\fBextra_sei\fR \fIboolean\fR" 4
+.IX Item "extra_sei boolean"
+Pass extra frame side data. The default is 1.
+.Sp
+H.264 and HEVC use SEI payloads; AV1 uses metadata OBUs. This gates the
+payload array used for \fBa53cc\fR, HEVC and AV1 \fBs12m_tc\fR, and
+H.264 and HEVC \fBudu_sei\fR.
+.IP "\fBa53cc\fR \fIboolean\fR" 4
+.IX Item "a53cc boolean"
+Use \f(CW\*(C`AV_FRAME_DATA_A53_CC\*(C'\fR side data for A53 closed captions when
+available. Requires \fBextra_sei\fR. The default is 1.
+.Sp
+H.264 and HEVC carry it in ITU-T T.35 registered user-data SEI;
+AV1 uses an ITU-T T.35 metadata OBU.
+.IP "\fBs12m_tc\fR \fIboolean\fR" 4
+.IX Item "s12m_tc boolean"
+Use \f(CW\*(C`AV_FRAME_DATA_S12M_TIMECODE\*(C'\fR side data when available.
+The default is 1.
+.Sp
+H.264 uses picture timing and requires SDK 12.2 or newer; HEVC uses timecode
+SEI; AV1 uses timecode metadata OBUs. The HEVC and AV1 paths require
+\&\fBextra_sei\fR; the H.264 path is independent of it.
+.PP
+With SDK 13.0 or newer, HEVC and AV1 also support mastering-display and
+content-light-level metadata. The corresponding
+\&\f(CW\*(C`AV_FRAME_DATA_MASTERING_DISPLAY_METADATA\*(C'\fR and
+\&\f(CW\*(C`AV_FRAME_DATA_CONTENT_LIGHT_LEVEL\*(C'\fR entries in
+\&\f(CW\*(C`AVCodecContext.decoded_side_data\*(C'\fR enable output at initialization.
+Frame side data supplies per-frame values, falling back to those stream
+values when absent. This path is independent of \fBextra_sei\fR.
+.PP
+Other common options
+.IX Subsection "Other common options"
+.IP "\fBlevel\fR \fIinteger\fR" 4
+.IX Item "level integer"
+Set the encoding level restriction using a named value (recommended) or
+its integer. The tables below list the values, numeric ranges and default
+integers for each codec. The default is \fBauto\fR (0 for H.264 and HEVC,
+24 for AV1).
+.IP "\fBgpu\fR \fIinteger\fR" 4
+.IX Item "gpu integer"
+Select the NVENC-capable GPU for system-memory input without a supplied
+hardware device using a named value from the table (recommended) or its
+integer. Device indices start at 0. The range is \f(CW\-2\fR to
+\&\f(CW\*(C`INT_MAX\*(C'\fR and the default is \fBany\fR (\-1).
+.RS 4
+.IP \fBlist\fR 4
+.IX Item "list"
+List the available devices (\-2).
+.IP \fBany\fR 4
+.IX Item "any"
+Use the first available device (\-1).
+.RE
+.RS 4
+.RE
+.IP "\fBsurfaces\fR \fIinteger\fR" 4
+.IX Item "surfaces integer"
+Set the number of concurrent surfaces, from \f(CW0\fR to \f(CW64\fR. The default
+is 0 (automatic).
+.IP "\fBdelay\fR \fIinteger\fR" 4
+.IX Item "delay integer"
+Delay frame output by the specified number of frames, from \f(CW0\fR to
+\&\f(CW\*(C`INT_MAX\*(C'\fR. The default is \f(CW\*(C`INT_MAX\*(C'\fR; the actual delay is limited
+by the number of surfaces.
+.IP "\fBrgb_mode\fR \fIinteger\fR" 4
+.IX Item "rgb_mode integer"
+Select how packed RGB input is handled using a named value from the table
+(recommended) or its integer. The range is \f(CW0\fR to \f(CW\*(C`INT_MAX\*(C'\fR;
+the default is \fByuv420\fR (1).
+.RS 4
+.IP \fBdisabled\fR 4
+.IX Item "disabled"
+Reject packed RGB input (0).
+.IP \fByuv420\fR 4
+.IX Item "yuv420"
+Convert to YUV 4:2:0 (1).
+.IP \fByuv444\fR 4
+.IX Item "yuv444"
+Convert to YUV 4:4:4 (2).
+.RE
+.RS 4
+.RE
+.IP "\fBhighbitdepth\fR \fIboolean\fR" 4
+.IX Item "highbitdepth boolean"
+Enable 10\-bit encoding for 8\-bit input. The default is 0.
+.Sp
+For H.264 this requires SDK 13.0 or newer.
+.IP "\fBforced-idr\fR \fIboolean\fR" 4
+.IX Item "forced-idr boolean"
+When forcing keyframes, force IDR frames. The range is \f(CW\-1\fR to \f(CW1\fR and
+the default is 0. A value of \f(CW\-1\fR leaves the picture-type decision to
+the encoder.
+.IP "\fBzerolatency\fR \fIboolean\fR" 4
+.IX Item "zerolatency boolean"
+Request zero-latency operation with no reordering delay. The default is 0.
+.IP "\fBnonref_p\fR \fIboolean\fR" 4
+.IX Item "nonref_p boolean"
+Enable automatic insertion of non-reference P\-frames. The default is 0.
+.IP "\fBdpb_size\fR \fIinteger\fR" 4
+.IX Item "dpb_size integer"
+Set the decoded picture buffer size, from \f(CW0\fR to \f(CW\*(C`INT_MAX\*(C'\fR. The
+default is 0 (automatic).
+.IP "\fBintra-refresh\fR \fIboolean\fR" 4
+.IX Item "intra-refresh boolean"
+Use periodic intra refresh instead of IDR frames. The default is 0.
+.PP
+\fIH.264 and HEVC options\fR
+.IX Subsection "H.264 and HEVC options"
+.PP
+The following options are available for \f(CW\*(C`h264_nvenc\*(C'\fR and
+\&\f(CW\*(C`hevc_nvenc\*(C'\fR only.
+.IP "\fBaud\fR \fIboolean\fR" 4
+.IX Item "aud boolean"
+Use access unit delimiters. The default is 0.
+.IP "\fBbluray-compat\fR \fIboolean\fR" 4
+.IX Item "bluray-compat boolean"
+Enable Blu-ray compatibility workarounds. The default is 0.
+.IP "\fBudu_sei\fR \fIboolean\fR" 4
+.IX Item "udu_sei boolean"
+Pass \f(CW\*(C`AV_FRAME_DATA_SEI_UNREGISTERED\*(C'\fR frame side data as unregistered
+user-data SEI. Requires \fBextra_sei\fR. The default is 0.
+.IP "\fBsingle-slice-intra-refresh\fR \fIboolean\fR" 4
+.IX Item "single-slice-intra-refresh boolean"
+Use single-slice intra refresh. This also enables \fBintra-refresh\fR.
+The default is 0.
+.IP "\fBmax_slice_size\fR \fIinteger\fR" 4
+.IX Item "max_slice_size integer"
+Set the maximum encoded slice size in bytes, from \f(CW0\fR to \f(CW\*(C`INT_MAX\*(C'\fR.
+The default is 0 (no override).
+.IP "\fBconstrained-encoding\fR \fIboolean\fR" 4
+.IX Item "constrained-encoding boolean"
+Enable constrained-frame encoding, making each slice in a constrained
+picture independent of the other slices. The default is 0.
+.PP
+\fIHEVC and AV1 options\fR
+.IX Subsection "HEVC and AV1 options"
+.PP
+The following option is available for \f(CW\*(C`hevc_nvenc\*(C'\fR and
+\&\f(CW\*(C`av1_nvenc\*(C'\fR only.
+.IP "\fBsplit_encode_mode\fR \fIinteger\fR" 4
+.IX Item "split_encode_mode integer"
+Set split-frame encoding mode using a named value from the table
+(recommended) or its integer. Requires SDK 12.1 or newer. The range is
+\&\f(CW0\fR to \f(CW15\fR and the default is \fBauto\fR (0).
+.RS 4
+.IP \fBauto\fR 4
+.IX Item "auto"
+Enable or disable it according to the preset and tuning (0).
+.IP \fBforced\fR 4
+.IX Item "forced"
+Enable it with the number of horizontal strips selected by the driver (1).
+.IP \fB2\fR 4
+.IX Item "2"
+Force two horizontal strips when more than one NVENC engine is available (2).
+.IP \fB3\fR 4
+.IX Item "3"
+Force three horizontal strips when more than two NVENC engines are
+available (3).
+.IP \fB4\fR 4
+.IX Item "4"
+Force four horizontal strips when more than three NVENC engines are
+available (4). Requires SDK 13.0 or newer.
+.IP \fBdisabled\fR 4
+.IX Item "disabled"
+Disable split encoding (15).
+.RE
+.RS 4
+.RE
+.PP
+\fIH.264 options\fR
+.IX Subsection "H.264 options"
+.IP "\fBprofile\fR \fIinteger\fR" 4
+.IX Item "profile integer"
+Set the H.264 profile using a named value from the table (recommended)
+or its integer. The default is \fBhigh\fR (2).
+.RS 4
+.IP \fBbaseline\fR 4
+.IX Item "baseline"
+baseline profile (0).
+.IP \fBmain\fR 4
+.IX Item "main"
+main profile (1).
+.IP \fBhigh\fR 4
+.IX Item "high"
+high profile (2).
+.IP \fBhigh10\fR 4
+.IX Item "high10"
+high10 profile (3).
+.IP \fBhigh422\fR 4
+.IX Item "high422"
+high422 profile (4).
+.IP \fBhigh444p\fR 4
+.IX Item "high444p"
+high444p profile (5).
+.RE
+.RS 4
+.Sp
+The \fBhigh10\fR and \fBhigh422\fR values require SDK 13.0 or newer.
+With headers older than SDK 13.0, \fBhigh444p\fR has integer value 3
+instead of 5.
+.RE
+.IP "\fBlevel\fR \fIinteger\fR" 4
+.IX Item "level integer"
+Set the H.264 level restriction using a named value from the table
+(recommended) or its integer. The range is \f(CW0\fR to \f(CW62\fR; the
+default is \fBauto\fR (0).
+.RS 4
+.IP \fBauto\fR 4
+.IX Item "auto"
+Automatic selection (0).
+.IP \fB1b\fR 4
+.IX Item "1b"
+Level 1b (9).
+.IP \fB1.0b\fR 4
+.IX Item "1.0b"
+Level 1.0b (9).
+.IP \fB1\fR 4
+.IX Item "1"
+Level 1 (10).
+.IP \fB1.0\fR 4
+.IX Item "1.0"
+Level 1.0 (10).
+.IP \fB1.1\fR 4
+.IX Item "1.1"
+Level 1.1 (11).
+.IP \fB1.2\fR 4
+.IX Item "1.2"
+Level 1.2 (12).
+.IP \fB1.3\fR 4
+.IX Item "1.3"
+Level 1.3 (13).
+.IP \fB2\fR 4
+.IX Item "2"
+Level 2 (20).
+.IP \fB2.0\fR 4
+.IX Item "2.0"
+Level 2.0 (20).
+.IP \fB2.1\fR 4
+.IX Item "2.1"
+Level 2.1 (21).
+.IP \fB2.2\fR 4
+.IX Item "2.2"
+Level 2.2 (22).
+.IP \fB3\fR 4
+.IX Item "3"
+Level 3 (30).
+.IP \fB3.0\fR 4
+.IX Item "3.0"
+Level 3.0 (30).
+.IP \fB3.1\fR 4
+.IX Item "3.1"
+Level 3.1 (31).
+.IP \fB3.2\fR 4
+.IX Item "3.2"
+Level 3.2 (32).
+.IP \fB4\fR 4
+.IX Item "4"
+Level 4 (40).
+.IP \fB4.0\fR 4
+.IX Item "4.0"
+Level 4.0 (40).
+.IP \fB4.1\fR 4
+.IX Item "4.1"
+Level 4.1 (41).
+.IP \fB4.2\fR 4
+.IX Item "4.2"
+Level 4.2 (42).
+.IP \fB5\fR 4
+.IX Item "5"
+Level 5 (50).
+.IP \fB5.0\fR 4
+.IX Item "5.0"
+Level 5.0 (50).
+.IP \fB5.1\fR 4
+.IX Item "5.1"
+Level 5.1 (51).
+.IP \fB5.2\fR 4
+.IX Item "5.2"
+Level 5.2 (52).
+.IP \fB6.0\fR 4
+.IX Item "6.0"
+Level 6.0 (60).
+.IP \fB6.1\fR 4
+.IX Item "6.1"
+Level 6.1 (61).
+.IP \fB6.2\fR 4
+.IX Item "6.2"
+Level 6.2 (62).
+.RE
+.RS 4
+.RE
+.IP "\fBcoder\fR \fIinteger\fR" 4
+.IX Item "coder integer"
+Set the entropy coder using a named value from the table (recommended)
+or its integer. The range is \f(CW\-1\fR to \f(CW2\fR; the default is
+\&\fBdefault\fR (\-1).
+.RS 4
+.IP \fBdefault\fR 4
+.IX Item "default"
+Leave the preset entropy coding mode unchanged (\-1).
+.IP \fBauto\fR 4
+.IX Item "auto"
+Automatic selection (0).
+.IP \fBcabac\fR 4
+.IX Item "cabac"
+.PD 0
+.IP \fBac\fR 4
+.IX Item "ac"
+.PD
+CABAC (1).
+.IP \fBcavlc\fR 4
+.IX Item "cavlc"
+.PD 0
+.IP \fBvlc\fR 4
+.IX Item "vlc"
+.PD
+CAVLC (2).
+.RE
+.RS 4
+.RE
+.PP
+\fIHEVC options\fR
+.IX Subsection "HEVC options"
+.IP "\fBprofile\fR \fIinteger\fR" 4
+.IX Item "profile integer"
+Set the HEVC profile using a named value from the table (recommended)
+or its integer. The default is \fBmain\fR (0).
+.RS 4
+.IP \fBmain\fR 4
+.IX Item "main"
+main profile (0).
+.IP \fBmain10\fR 4
+.IX Item "main10"
+main10 profile (1).
+.IP \fBrext\fR 4
+.IX Item "rext"
+rext profile (2).
+.IP \fBmv\fR 4
+.IX Item "mv"
+mv profile (3).
+.RE
+.RS 4
+.Sp
+The \fBmv\fR value requires SDK 13.0 or newer.
+.RE
+.IP "\fBlevel\fR \fIinteger\fR" 4
+.IX Item "level integer"
+Set the HEVC level restriction using a named value from the table
+(recommended) or its integer. The range is \f(CW0\fR to \f(CW186\fR; the
+default is \fBauto\fR (0).
+.RS 4
+.IP \fBauto\fR 4
+.IX Item "auto"
+Automatic selection (0).
+.IP \fB1\fR 4
+.IX Item "1"
+Level 1 (30).
+.IP \fB1.0\fR 4
+.IX Item "1.0"
+Level 1.0 (30).
+.IP \fB2\fR 4
+.IX Item "2"
+Level 2 (60).
+.IP \fB2.0\fR 4
+.IX Item "2.0"
+Level 2.0 (60).
+.IP \fB2.1\fR 4
+.IX Item "2.1"
+Level 2.1 (63).
+.IP \fB3\fR 4
+.IX Item "3"
+Level 3 (90).
+.IP \fB3.0\fR 4
+.IX Item "3.0"
+Level 3.0 (90).
+.IP \fB3.1\fR 4
+.IX Item "3.1"
+Level 3.1 (93).
+.IP \fB4\fR 4
+.IX Item "4"
+Level 4 (120).
+.IP \fB4.0\fR 4
+.IX Item "4.0"
+Level 4.0 (120).
+.IP \fB4.1\fR 4
+.IX Item "4.1"
+Level 4.1 (123).
+.IP \fB5\fR 4
+.IX Item "5"
+Level 5 (150).
+.IP \fB5.0\fR 4
+.IX Item "5.0"
+Level 5.0 (150).
+.IP \fB5.1\fR 4
+.IX Item "5.1"
+Level 5.1 (153).
+.IP \fB5.2\fR 4
+.IX Item "5.2"
+Level 5.2 (156).
+.IP \fB6\fR 4
+.IX Item "6"
+Level 6 (180).
+.IP \fB6.0\fR 4
+.IX Item "6.0"
+Level 6.0 (180).
+.IP \fB6.1\fR 4
+.IX Item "6.1"
+Level 6.1 (183).
+.IP \fB6.2\fR 4
+.IX Item "6.2"
+Level 6.2 (186).
+.RE
+.RS 4
+.RE
+.IP "\fBtier\fR \fIinteger\fR" 4
+.IX Item "tier integer"
+Set the HEVC encoding tier using a named value from the table (recommended)
+or its integer. The range is \f(CW0\fR to \f(CW1\fR; the default is
+\&\fBmain\fR (0).
+.RS 4
+.IP \fBmain\fR 4
+.IX Item "main"
+Main tier (0).
+.IP \fBhigh\fR 4
+.IX Item "high"
+High tier (1).
+.RE
+.RS 4
+.RE
+.IP "\fBunidir_b\fR \fIboolean\fR" 4
+.IX Item "unidir_b boolean"
+Enable unidirectional B\-frames. Requires SDK 12.2 or newer. The default is 0.
+.PP
+\fIAV1 options\fR
+.IX Subsection "AV1 options"
+.IP "\fBlevel\fR \fIinteger\fR" 4
+.IX Item "level integer"
+Set the AV1 level restriction using a named value from the table
+(recommended) or its integer. The range is \f(CW0\fR to \f(CW24\fR; the
+default is \fBauto\fR (24).
+.RS 4
+.IP \fB2\fR 4
+.IX Item "2"
+Level 2 (0).
+.IP \fB2.0\fR 4
+.IX Item "2.0"
+Level 2.0 (0).
+.IP \fB2.1\fR 4
+.IX Item "2.1"
+Level 2.1 (1).
+.IP \fB2.2\fR 4
+.IX Item "2.2"
+Level 2.2 (2).
+.IP \fB2.3\fR 4
+.IX Item "2.3"
+Level 2.3 (3).
+.IP \fB3\fR 4
+.IX Item "3"
+Level 3 (4).
+.IP \fB3.0\fR 4
+.IX Item "3.0"
+Level 3.0 (4).
+.IP \fB3.1\fR 4
+.IX Item "3.1"
+Level 3.1 (5).
+.IP \fB3.2\fR 4
+.IX Item "3.2"
+Level 3.2 (6).
+.IP \fB3.3\fR 4
+.IX Item "3.3"
+Level 3.3 (7).
+.IP \fB4\fR 4
+.IX Item "4"
+Level 4 (8).
+.IP \fB4.0\fR 4
+.IX Item "4.0"
+Level 4.0 (8).
+.IP \fB4.1\fR 4
+.IX Item "4.1"
+Level 4.1 (9).
+.IP \fB4.2\fR 4
+.IX Item "4.2"
+Level 4.2 (10).
+.IP \fB4.3\fR 4
+.IX Item "4.3"
+Level 4.3 (11).
+.IP \fB5\fR 4
+.IX Item "5"
+Level 5 (12).
+.IP \fB5.0\fR 4
+.IX Item "5.0"
+Level 5.0 (12).
+.IP \fB5.1\fR 4
+.IX Item "5.1"
+Level 5.1 (13).
+.IP \fB5.2\fR 4
+.IX Item "5.2"
+Level 5.2 (14).
+.IP \fB5.3\fR 4
+.IX Item "5.3"
+Level 5.3 (15).
+.IP \fB6\fR 4
+.IX Item "6"
+Level 6 (16).
+.IP \fB6.0\fR 4
+.IX Item "6.0"
+Level 6.0 (16).
+.IP \fB6.1\fR 4
+.IX Item "6.1"
+Level 6.1 (17).
+.IP \fB6.2\fR 4
+.IX Item "6.2"
+Level 6.2 (18).
+.IP \fB6.3\fR 4
+.IX Item "6.3"
+Level 6.3 (19).
+.IP \fB7\fR 4
+.IX Item "7"
+Level 7 (20).
+.IP \fB7.0\fR 4
+.IX Item "7.0"
+Level 7.0 (20).
+.IP \fB7.1\fR 4
+.IX Item "7.1"
+Level 7.1 (21).
+.IP \fB7.2\fR 4
+.IX Item "7.2"
+Level 7.2 (22).
+.IP \fB7.3\fR 4
+.IX Item "7.3"
+Level 7.3 (23).
+.IP \fBauto\fR 4
+.IX Item "auto"
+Automatic selection (24).
+.RE
+.RS 4
+.RE
+.IP "\fBtier\fR \fIinteger\fR" 4
+.IX Item "tier integer"
+Set the AV1 encoding tier, from \f(CW0\fR to \f(CW1\fR. The default is 0.
+.RS 4
+.IP \fB0\fR 4
+.IX Item "0"
+Tier 0.
+.IP \fB1\fR 4
+.IX Item "1"
+Tier 1.
+.RE
+.RS 4
+.RE
+.IP "\fBtile-rows\fR \fIinteger\fR" 4
+.IX Item "tile-rows integer"
+.PD 0
+.IP "\fBtile-columns\fR \fIinteger\fR" 4
+.IX Item "tile-columns integer"
+.PD
+Set the number of tile rows and columns, respectively. Each accepts
+\&\f(CW\-1\fR to \f(CW64\fR and defaults to \f(CW\-1\fR (no override).
+.IP "\fBtiming-info\fR \fIboolean\fR" 4
+.IX Item "timing-info boolean"
+Include timing information in sequence and frame headers. The default is 0.
 .SS png
 .IX Subsection "png"
 PNG image encoder.

@@ -41,7 +41,15 @@
     </ul></li>
     <li><a id="toc-Comments" href="#Comments">2.3 Comments</a></li>
     <li><a id="toc-Naming-conventions" href="#Naming-conventions-1">2.4 Naming conventions</a></li>
-    <li><a id="toc-Miscellaneous-conventions" href="#Miscellaneous-conventions">2.5 Miscellaneous conventions</a></li>
+    <li><a id="toc-Source-tree-layout" href="#Source-tree-layout-1">2.5 Source tree layout</a>
+    <ul class="toc-numbered-mark">
+      <li><a id="toc-Directories" href="#Directories">2.5.1 Directories</a></li>
+      <li><a id="toc-File-names" href="#File-names">2.5.2 File names</a></li>
+      <li><a id="toc-Includes" href="#Includes">2.5.3 Includes</a></li>
+      <li><a id="toc-Build-system" href="#Build-system">2.5.4 Build system</a></li>
+      <li><a id="toc-Moving-files" href="#Moving-files">2.5.5 Moving files</a></li>
+    </ul></li>
+    <li><a id="toc-Miscellaneous-conventions" href="#Miscellaneous-conventions">2.6 Miscellaneous conventions</a></li>
   </ul></li>
   <li><a id="toc-Development-Policy" href="#Development-Policy-1">3 Development Policy</a>
   <ul class="toc-numbered-mark">
@@ -429,8 +437,92 @@ letter as they are reserved by the C standard. Names starting with <code class="
 are reserved at the file level and may not be used for externally visible
 symbols. If in doubt, just avoid names starting with <code class="code">_</code> altogether.
 </p>
+<a class="anchor" id="Source-tree-layout"></a><a name="Source-tree-layout-1"></a>
+<h3 class="section">2.5 Source tree layout<span class="pull-right"><a class="anchor hidden-xs" href="#Source-tree-layout" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Source-tree-layout" aria-hidden="true">TOC</a></span></h3>
+
+<p>A file&rsquo;s path tells the reader what the file is.
+It also tells the reader which logical group the file belongs to.
+The rules below follow from this principle.
+</p>
+<a name="Directories"></a>
+<h4 class="subsection">2.5.1 Directories<span class="pull-right"><a class="anchor hidden-xs" href="#Directories" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Directories" aria-hidden="true">TOC</a></span></h4>
+
+<p>A subsystem is the set of files implementing one format, codec or shared
+feature, for example Ogg or ID3v2.
+A subsystem made of more than one file lives in its own directory inside its
+library, for example <samp class="file">libavformat/ogg/</samp>.
+A nested directory groups related files within a subsystem, for example the
+per-codec mappings of the demuxer (<code class="code">struct ogg_codec</code>) in
+<samp class="file">libavformat/ogg/demuxer/</samp>.
+</p>
+<a name="File-names"></a>
+<h4 class="subsection">2.5.2 File names<span class="pull-right"><a class="anchor hidden-xs" href="#File-names" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-File-names" aria-hidden="true">TOC</a></span></h4>
+
+<p>Inside a subsystem directory, file names drop the subsystem prefix.
+The directory already carries it.
+</p>
+<p>A file name states the file&rsquo;s role in full words, for example
+<samp class="file">demuxer.c</samp>, <samp class="file">muxer.c</samp>, <samp class="file">decoder.c</samp>, <samp class="file">encoder.c</samp>,
+<samp class="file">parser.c</samp>, <samp class="file">reader.c</samp> or <samp class="file">writer.c</samp>.
+Abbreviations would be ambiguous across libraries.
+For example, &lsquo;<samp class="samp">dec</samp>&rsquo; means a decoder in libavcodec and a demuxer in
+libavformat.
+</p>
+<p>A header shared by a subsystem is named after it.
+It sits next to the subsystem&rsquo;s directory, for example <samp class="file">libavformat/id3v2.h</samp>
+next to <samp class="file">libavformat/id3v2/</samp>.
+Its include path then reads as the subsystem&rsquo;s name.
+</p>
+<p>Files that predate these rules keep their names until a commit moves them.
+</p>
+<a name="Includes"></a>
+<h4 class="subsection">2.5.3 Includes<span class="pull-right"><a class="anchor hidden-xs" href="#Includes" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Includes" aria-hidden="true">TOC</a></span></h4>
+
+<p>A file includes headers from its own directory by their bare name, for example
+<code class="code">#include &quot;demuxer.h&quot;</code>.
+It includes all other headers by their path from the source root, for example
+<code class="code">#include &quot;libavformat/ogg/demuxer.h&quot;</code>.
+The include path then names the group each header belongs to.
+</p>
+<a name="Build-system"></a>
+<h4 class="subsection">2.5.4 Build system<span class="pull-right"><a class="anchor hidden-xs" href="#Build-system" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Build-system" aria-hidden="true">TOC</a></span></h4>
+
+<p>Each subsystem directory has its own <samp class="file">Makefile</samp>.
+It lists the objects of the components the subsystem implements, with paths
+relative to the library, for example
+<code class="code">OBJS-$(CONFIG_OGG_DEMUXER) += ogg/demuxer.o</code>.
+It also has a <code class="code">clean::</code> rule for each of its directories.
+The library <samp class="file">Makefile</samp> includes it.
+Other components list the subsystem objects they use in their own
+<samp class="file">Makefile</samp>.
+</p>
+<a name="Moving-files"></a>
+<h4 class="subsection">2.5.5 Moving files<span class="pull-right"><a class="anchor hidden-xs" href="#Moving-files" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Moving-files" aria-hidden="true">TOC</a></span></h4>
+
+<p>A commit that moves files should leave the moved code verifiable as
+unchanged.
+For a rename, git&rsquo;s rename detection shows it, and patches written against
+the old paths then apply across the move with <code class="command">git am -3</code>.
+For a split, the extracted code should be identical to the code it
+replaces.
+</p>
+<p>The move should change only what follows from the new paths: what refers to
+the moved files, such as includes, Makefiles, documentation, <samp class="file">MAINTAINERS</samp>
+and <samp class="file">.forgejo/CODEOWNERS</samp>, names derived from the file name, such as
+header guards, and the symbols that now cross a file boundary.
+A small change that completes the build integration of the moved code can go
+with it.
+</p>
+<p>Changes needed to make code movable should come before the move, in their
+own commits.
+Other renames go in a commit of their own, before or after the move, whichever
+keeps the move easier to verify.
+That commit also realigns the lines the rename shifts.
+</p>
+<p>Each subsystem should move in its own commit.
+</p>
 <a name="Miscellaneous-conventions"></a>
-<h3 class="section">2.5 Miscellaneous conventions<span class="pull-right"><a class="anchor hidden-xs" href="#Miscellaneous-conventions" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Miscellaneous-conventions" aria-hidden="true">TOC</a></span></h3>
+<h3 class="section">2.6 Miscellaneous conventions<span class="pull-right"><a class="anchor hidden-xs" href="#Miscellaneous-conventions" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Miscellaneous-conventions" aria-hidden="true">TOC</a></span></h3>
 
 <ul class="itemize mark-bullet">
 <li>Casts should be used only when necessary. Unneeded parentheses
@@ -460,9 +552,15 @@ The code must behave correctly under such conditions.
 </p>
 <a name="Robustness"></a>
 <p>The code must treat as untrusted any bytestream received from a caller or read
-from a file, network, etc. It must not misbehave when arbitrary data is sent to
-it - typically it should print an error message and return
-<code class="code">AVERROR_INVALIDDATA</code> on encountering invalid input data.
+from a file, network, etc. Arbitrary input must never cause unsafe
+behavior or a security issue.
+</p>
+<p>Common real-world errors of common formats and codecs should be detected where practical,
+reported where appropriate, and handled to produce the best output possible,
+for example through error concealment.
+</p>
+<p>All errors must still be handled safely, but if they are detected,
+reporting or how they are handled is left to the implementation.
 </p>
 <a name="Memory-allocation"></a>
 <p>The code must use the <code class="code">av_malloc()</code> family of functions from
@@ -537,6 +635,11 @@ the commit log mailing list easier. This also helps in case of debugging
 later on.
 Also if you have doubts about splitting or not splitting, do not hesitate to
 ask/discuss it on the developer mailing list.
+</p>
+<a name="Bug-fixes-intended-for-backporting-should-stay-focused_002e"></a>
+<p>Keep bug fixes as small as possible while fully fixing the reported issue.
+Changes not needed for correctness or robustness should be submitted separately,
+especially if they increase complexity or affect backporting.
 </p>
 <a name="Cosmetic-changes-should-be-kept-in-separate-patches_002e"></a>
 <p>We refuse source indentation and other cosmetic changes if they are mixed
@@ -833,11 +936,16 @@ extension) and might work with other applications.
 and execute &rsquo;Send&rsquo;.
 </p>
 <a name="Reviews"></a>
-<p>Your patch will be reviewed on the mailing list. You will likely be asked
+<p>Your patch or pull request will be reviewed on the mailing list or on
+code.ffmpeg.org. You will likely be asked
 to make some changes and are expected to send in an improved version that
 incorporates the requests from the review. This process may go through
 several iterations. Once your patch is deemed good enough, some developer
 will pick it up and commit it to the official FFmpeg tree.
+If you want an LLM-based review, add
+<a class="url" href="https://code.ffmpeg.org/Forgejo_Fairy">Forgejo Fairy</a> as a reviewer
+to your pull request. Issues with Fairy herself can be reported at her
+<a class="url" href="https://code.ffmpeg.org/michaelni/Fairies">repository</a>.
 </p>
 <p>Give us a few days to react. But if some time passes without reaction,
 send a reminder by email. Your patch should eventually be dealt with.

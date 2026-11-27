@@ -650,6 +650,10 @@ Available values for <var class="var">mode</var> are:
 <dt>&lsquo;<samp class="samp">2, rdft</samp>&rsquo;</dt>
 <dd><p>show audio frequency band using RDFT ((Inverse) Real Discrete Fourier Transform)
 </p></dd>
+<dt>&lsquo;<samp class="samp">3, phase</samp>&rsquo;</dt>
+<dd><p>like rdft, with stereo content whose left channel leads in phase shown in
+blue and whose right channel leads shown in yellow
+</p></dd>
 </dl>
 
 <p>Default value is &quot;video&quot;, if video is not present or cannot be played
@@ -869,6 +873,39 @@ frame, and pause.
 </dd>
 <dt><kbd class="key">page down/page up</kbd></dt>
 <dd><p>Seek to previous/next chapter or backward/forward 10 minutes if no chapters.
+The chapter list is shown briefly, marking the chapter being played at its
+left edge. It needs libass and the SDL renderer, so it is unavailable
+in builds without libass and with the Vulkan renderer.
+</p>
+</dd>
+<dt><kbd class="key">l</kbd></dt>
+<dd><p>Keep the chapter list on screen. While it is kept, typing filters the list by
+artist and title, down/up move its selection and escape closes it.
+</p>
+</dd>
+<dt><kbd class="key">o</kbd></dt>
+<dd><p>Show the files in the directory of the input. Enter or a click plays the
+selected file or opens the selected directory, escape closes the list. Typing
+filters the list by name.
+</p>
+</dd>
+<dt><kbd class="key">enter</kbd></dt>
+<dd><p>Seek to the chapter selected in the chapter list while it is shown.
+</p>
+</dd>
+<dt><kbd class="key">mouse wheel</kbd></dt>
+<dd><p>Move the chapter list selection while it is shown.
+</p>
+</dd>
+<dt><kbd class="key">mouse over the (i) symbol</kbd></dt>
+<dd><p>Show the metadata of that chapter list entry.
+</p>
+</dd>
+<dt><kbd class="key">left mouse click</kbd></dt>
+<dd><p>Seek to the clicked chapter list entry, or sort the list by the clicked column
+button. Clicking the same button again flips the order, and ties are resolved
+by the columns clicked before. The shuffle button orders the list by a seed
+that its left half lowers and its right half raises.
 </p>
 </dd>
 <dt><kbd class="key">right mouse click</kbd></dt>

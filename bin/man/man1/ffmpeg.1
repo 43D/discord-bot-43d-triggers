@@ -537,8 +537,11 @@ of the other. Its audio counterpart is the \f(CW\*(C`amix\*(C'\fR filter.
 While decoders are normally associated with demuxer streams, it is also possible
 to create "loopback" decoders that decode the output from some encoder and allow
 it to be fed back to complex filtergraphs. This is done with the \f(CW\*(C`\-dec\*(C'\fR
-directive, which takes as a parameter the index of the output stream that should
-be decoded. Every such directive creates a new loopback decoder, indexed with
+directive, which takes as a parameter \fIoutput_file_index\fR:\fIstream_index\fR
+to select the output stream that should be decoded. Both indices are zero-based
+integers: the first identifies the output file and the second identifies the
+stream within that file. Stream specifiers such as \f(CW\*(C`v:0\*(C'\fR are not supported.
+Every such directive creates a new loopback decoder, indexed with
 successive integers starting at zero. These indices should then be used to refer
 to loopback decoders in complex filtergraph link labels, as described in the
 documentation for \fB\-filter_complex\fR.
@@ -1503,6 +1506,49 @@ To set the language of the first audio stream:
 .Vb 1
 \&        ffmpeg \-i INPUT \-metadata:s:a:0 language=eng OUTPUT
 .Ve
+.IP "\fB\-keep_metadata[:\fR\fImetadata_specifier\fR\fB]\fR \fIkey\fR \fB(\fR\fIoutput,per\-metadata\fR\fB)\fR" 4
+.IX Item "-keep_metadata[:metadata_specifier] key (output,per-metadata)"
+When re-encoding a stream, certain metadata keys that are likely to become stale
+(such as \f(CW\*(C`iTunSMPB\*(C'\fR or \f(CW\*(C`encoded_by\*(C'\fR) are automatically discarded.
+This option prevents a specific key from being discarded, preserving its original
+value from the input.
+.Sp
+Without a specifier, the key is preserved in all metadata contexts (format and
+streams). Use \f(CW\*(C`g\*(C'\fR to restrict to format (global) metadata, or \f(CW\*(C`s\*(C'\fR with
+an optional stream specifier to restrict to matching streams only.
+.Sp
+For example, to keep \f(CW\*(C`iTunSMPB\*(C'\fR in format metadata only when re-encoding:
+.Sp
+.Vb 1
+\&        ffmpeg \-i in.mp3 \-keep_metadata:g iTunSMPB out.mp3
+.Ve
+.Sp
+To keep \f(CW\*(C`NUMBER_OF_BYTES\*(C'\fR only for the video stream:
+.Sp
+.Vb 1
+\&        ffmpeg \-i in.mkv \-keep_metadata:s:v NUMBER_OF_BYTES out.mkv
+.Ve
+.Sp
+Some keys are stored in the metadata with a suffix (e.g.
+\&\f(CW\*(C`NUMBER_OF_BYTES\-eng\*(C'\fR). Specifying the unsuffixed family name (e.g.
+\&\f(CW\*(C`NUMBER_OF_BYTES\*(C'\fR) keeps all variants. To keep only a specific one,
+specify the full key explicitly:
+.Sp
+.Vb 1
+\&        ffmpeg \-i in.mkv \-keep_metadata:s:v NUMBER_OF_BYTES\-eng out.mkv
+.Ve
+.Sp
+Some (such as \f(CW\*(C`major_brand\*(C'\fR, \f(CW\*(C`minor_version\*(C'\fR, and
+\&\f(CW\*(C`compatible_brands\*(C'\fR) are always removed regardless of re-encoding, because
+they describe the source container and are meaningless in the output.
+\&\f(CW\*(C`\-keep_metadata\*(C'\fR applies to those keys even when stream-copying.
+.Sp
+Re-encoding-only keys (such as encoder tags and Matroska stream statistics) are
+removed from a stream's metadata only when that stream is being re-encoded, and
+from format metadata only when at least one audio or video stream is re-encoded.
+.Sp
+Only format and stream metadata are filtered. Chapter and program metadata
+are never modified by this mechanism.
 .IP "\fB\-disposition[:stream_specifier]\fR \fIvalue\fR \fB(\fR\fIoutput,per\-stream\fR\fB)\fR" 4
 .IX Item "-disposition[:stream_specifier] value (output,per-stream)"
 Sets the disposition flags for a stream.
@@ -1830,6 +1876,22 @@ all sub-mix element's \fIannotations\fRs
 .RE
 .RS 4
 .RE
+.IP \fBgain_map\fR 4
+.IX Item "gain_map"
+Groups together a base \fIstream\fR with a gain map, which together form a
+pair of renditions (e.g. HDR and SDR) as per ISO 21496\-1.
+.Sp
+For this group \fItype\fR, the following options are available
+.RS 4
+.IP \fBel_index\fR 4
+.IX Item "el_index"
+Index of the gain map stream within the group. Defaults to 0.
+.IP \fBvideo_size\fR 4
+.IX Item "video_size"
+Size of the final image for presentation.
+.RE
+.RS 4
+.RE
 .RE
 .RS 4
 .Sp
@@ -1856,6 +1918,12 @@ streams into an mp4 output
 \&        \-streamid 0:0 \-streamid 1:1 \-streamid 2:2 \-streamid 3:3 output.mp4
 .Ve
 .RE
+.IP "\fB\-reinit_opts[:\fR\fIstream_specifier\fR\fB] pts=\fR\fIpts\fR\fB|\fR\fIkey\fR\fB=\fR\fIvalue\fR\fB[:force_reinit=1][:\fR\fIkey\fR\fB=\fR\fIvalue\fR\fB,pts=\fR\fIpts\fR\fB...] (\fR\fIoutput,per\-stream\fR\fB)\fR" 4
+.IX Item "-reinit_opts[:stream_specifier] pts=pts|key=value[:force_reinit=1][:key=value,pts=pts...] (output,per-stream)"
+Creates a "," separated group of options to reconfigure an encoder at the
+specified output \fIpts\fR in AV_TIME_BASE units.
+The pseudo-option \fIforce_reinit\fR ensures the encoder is fully reinitialized
+instead of simply reconfigured.
 .IP "\fB\-target\fR \fItype\fR \fB(\fR\fIoutput\fR\fB)\fR" 4
 .IX Item "-target type (output)"
 Specify target file type (\f(CW\*(C`vcd\*(C'\fR, \f(CW\*(C`svcd\*(C'\fR, \f(CW\*(C`dvd\*(C'\fR, \f(CW\*(C`dv\*(C'\fR,
@@ -2038,8 +2106,8 @@ inputs. Default is false.
 Defines how many threads are used to process a filter pipeline. Each pipeline
 will produce a thread pool with this many threads available for parallel processing.
 The default is the number of available CPUs.
-.IP "\fB\-filter_buffered_frames\fR \fInb_frames\fR \fB(\fR\fIglobal\fR\fB)\fR" 4
-.IX Item "-filter_buffered_frames nb_frames (global)"
+.IP "\fB\-filter_buffered_frames[:\fR\fImedia_type\fR\fB]\fR \fInb_frames\fR \fB(\fR\fIglobal\fR\fB)\fR" 4
+.IX Item "-filter_buffered_frames[:media_type] nb_frames (global)"
 Defines the maximum number of buffered frames allowed in a filtergraph. Under
 normal circumstances, a filtergraph should not buffer more than a few frames,
 especially if frames are being fed to it and read from it in a balanced way
@@ -2047,6 +2115,11 @@ especially if frames are being fed to it and read from it in a balanced way
 to limit the total number of frames buffered across all links in a filtergraph.
 If more frames are generated, filtering is aborted and an error is returned.
 The default value is 0, which means no limit.
+.Sp
+The optional suffix \fImedia_type\fR may be used to set a different limit
+for audio and video frames, using the suffixes \f(CW\*(C`a\*(C'\fR and \f(CW\*(C`v\*(C'\fR,
+respectively. If the suffix is omitted, the limit applies to both audio and
+video frames, separately.
 .IP "\fB\-pre[:\fR\fIstream_specifier\fR\fB]\fR \fIpreset_name\fR \fB(\fR\fIoutput,per\-stream\fR\fB)\fR" 4
 .IX Item "-pre[:stream_specifier] preset_name (output,per-stream)"
 Specify the preset for matching stream(s).
@@ -2202,6 +2275,62 @@ numerator and denominator of the aspect ratio. For example "4:3",
 If used together with \fB\-vcodec copy\fR, it will affect the aspect ratio
 stored at container level, but not the aspect ratio stored in encoded
 frames, if it exists.
+.IP "\fB\-stereo3d[:\fR\fIstream_specifier\fR\fB]\fR \fIlayout\fR \fB(\fR\fIoutput,per\-stream\fR\fB)\fR" 4
+.IX Item "-stereo3d[:stream_specifier] layout (output,per-stream)"
+Set stereoscopic 3D layout metadata on the output stream. This does
+\&\fInot\fR rearrange pixels; use \fB\-vf stereo3d\fR for that.
+.Sp
+The metadata is stored as \f(CW\*(C`AV_PKT_DATA_STEREO3D\*(C'\fR side data on the
+output stream. Muxers that already consume that side data will write the
+corresponding container boxes or elements, including:
+.RS 4
+.IP \(bu 4
+MP4 Google spatial-media \f(CW\*(C`st3d\*(C'\fR (requires \fB\-strict unofficial\fR)
+.IP \(bu 4
+QuickTime MOV Apple \f(CW\*(C`vexu\*(C'\fR eyes (no \f(CW\*(C`st3d\*(C'\fR)
+.IP \(bu 4
+Matroska \f(CW\*(C`StereoMode\*(C'\fR; \fB\-stereo3d\fR overrides the
+\&\f(CW\*(C`stereo_mode\*(C'\fR metadata tag, including a value inherited from the
+input
+.RE
+.RS 4
+.Sp
+\&\fIlayout\fR is case-insensitive. The following values are accepted:
+.IP \fB2d\fR 4
+.IX Item "2d"
+.PD 0
+.IP \fBmono\fR 4
+.IX Item "mono"
+.PD
+Monoscopic video.
+.IP \fBsbs\fR 4
+.IX Item "sbs"
+.PD 0
+.IP \fBsbsl\fR 4
+.IX Item "sbsl"
+.IP "\fBside by side\fR" 4
+.IX Item "side by side"
+.PD
+Side-by-side, left eye on the left.
+.IP \fBtb\fR 4
+.IX Item "tb"
+.PD 0
+.IP \fBtbl\fR 4
+.IX Item "tbl"
+.IP "\fBtop and bottom\fR" 4
+.IX Item "top and bottom"
+.PD
+Top-and-bottom, left eye on top.
+.RE
+.RS 4
+.Sp
+Inverted layouts such as \fBsbsr\fR are not supported. An empty stream
+specifier applies to video streams only and is ignored for audio and
+other types. An explicit specifier on a non-video stream (for example
+\&\fB\-stereo3d:a\fR) is an error.
+.Sp
+Recommended form: \fB\-stereo3d:v sbsl\fR.
+.RE
 .IP "\fB\-display_rotation[:\fR\fIstream_specifier\fR\fB]\fR \fIrotation\fR \fB(\fR\fIinput,per\-stream\fR\fB)\fR" 4
 .IX Item "-display_rotation[:stream_specifier] rotation (input,per-stream)"
 Set video rotation metadata.
@@ -3142,32 +3271,23 @@ will be enforced.
 If either the input or output is blocked leading to actual read speed falling behind the
 specified readrate, then this rate takes effect till the input catches up with the
 specified readrate. Must not be lower than the primary readrate.
-.IP "\fB\-vsync\fR \fIparameter\fR \fB(\fR\fIglobal\fR\fB)\fR" 4
-.IX Item "-vsync parameter (global)"
-.PD 0
 .IP "\fB\-fps_mode[:\fR\fIstream_specifier\fR\fB]\fR \fIparameter\fR \fB(\fR\fIoutput,per\-stream\fR\fB)\fR" 4
 .IX Item "-fps_mode[:stream_specifier] parameter (output,per-stream)"
-.PD
-Set video sync method / framerate mode. vsync is applied to all output video streams
-but can be overridden for a stream by setting fps_mode. vsync is deprecated and will be
-removed in the future.
-.Sp
-For compatibility reasons some of the values for vsync can be specified as numbers (shown
-in parentheses in the following table).
+Set video sync method / framerate mode.
 .RS 4
-.IP "\fBpassthrough (0)\fR" 4
-.IX Item "passthrough (0)"
+.IP \fBpassthrough\fR 4
+.IX Item "passthrough"
 Each frame is passed with its timestamp from the demuxer to the muxer.
-.IP "\fBcfr (1)\fR" 4
-.IX Item "cfr (1)"
+.IP \fBcfr\fR 4
+.IX Item "cfr"
 Frames will be duplicated and dropped to achieve exactly the requested
 constant frame rate.
-.IP "\fBvfr (2)\fR" 4
-.IX Item "vfr (2)"
+.IP \fBvfr\fR 4
+.IX Item "vfr"
 Frames are passed through with their timestamp or dropped so as to
 prevent 2 frames from having the same timestamp.
-.IP "\fBauto (\-1)\fR" 4
-.IX Item "auto (-1)"
+.IP \fBauto\fR 4
+.IX Item "auto"
 Chooses between cfr and vfr depending on muxer capabilities. This is the
 default method.
 .RE
@@ -3199,7 +3319,7 @@ Do not process input timestamps, but keep their values without trying
 to sanitize them. In particular, do not remove the initial start time
 offset value.
 .Sp
-Note that, depending on the \fBvsync\fR option or on specific muxer
+Note that, depending on the \fBfps_mode\fR option or on specific muxer
 processing (e.g. in case the format option \fBavoid_negative_ts\fR
 is enabled) the output timestamps may mismatch with the input
 timestamps even when this option is selected.
@@ -3527,15 +3647,9 @@ This option enables or disables seeking by timestamp in input files with the
 to the \fB\-ss\fR option is considered an actual timestamp, and is not
 offset by the start time of the file. This matters only for files which do
 not start from timestamp 0, such as transport streams.
-.IP "\fB\-thread_queue_size\fR \fIsize\fR \fB(\fR\fIinput/output\fR\fB)\fR" 4
-.IX Item "-thread_queue_size size (input/output)"
-For input, this option sets the maximum number of queued packets when reading
-from the file or device. With low latency / high rate live streams, packets may
-be discarded if they are not read in a timely manner; setting this value can
-force ffmpeg to use a separate input thread and read packets as soon as they
-arrive. By default ffmpeg only does this if multiple inputs are specified.
-.Sp
-For output, this option specified the maximum number of packets that may be
+.IP "\fB\-thread_queue_size\fR \fIsize\fR \fB(\fR\fIoutput\fR\fB)\fR" 4
+.IX Item "-thread_queue_size size (output)"
+This option specifies the maximum number of packets per stream that may be
 queued to each muxing thread.
 .IP "\fB\-sdp_file\fR \fIfile\fR \fB(\fR\fIglobal\fR\fB)\fR" 4
 .IX Item "-sdp_file file (global)"

@@ -376,7 +376,18 @@ It accepts the values:
 The initial value of the CDP's 16\-bit unsigned integer \f(CW\*(C`cdp_hdr_sequence_cntr\*(C'\fR and \f(CW\*(C`cdp_ftr_sequence_cntr\*(C'\fR fields. Defaults to 0.
 .IP \fBcdp_frame_rate\fR 4
 .IX Item "cdp_frame_rate"
-Set the CDP's \f(CW\*(C`cdp_frame_rate\*(C'\fR field. This doesn't actually change the timing of the data stream, it just changes the values inserted in that field in the generated CDP packets. Defaults to \fB30000/1001\fR.
+Set the CDP's \f(CW\*(C`cdp_frame_rate\*(C'\fR field. When \fBsplit\fR is enabled, it
+also sets the duration and the EIA\-608 capacity of each output packet,
+otherwise the timing of the data stream is not changed. Defaults to
+\&\fB30000/1001\fR.
+.IP \fBsplit\fR 4
+.IX Item "split"
+Split the packets holding more EIA\-608 byte pairs than one frame can carry,
+like the ones of an SCC file, into one packet per frame, and delay the
+following packets when needed. A frame lasts \f(CW\*(C`1/cdp_frame_rate\*(C'\fR and carries
+\&\f(CW\*(C`30000/1001/cdp_frame_rate\*(C'\fR byte pairs of each field on average. Packets
+holding CTA\-708 data are not split. The timestamps are left untouched when
+disabled, which is the default.
 .SS extract_extradata
 .IX Subsection "extract_extradata"
 Extract the in-band extradata.
@@ -768,6 +779,41 @@ For example, to remux 30 MB/sec NTSC IMX to MOV:
 .PP
 .Vb 1
 \&        ffmpeg \-i input.mxf \-c copy \-bsf:v imxdump \-tag:v mx3n output.mov
+.Ve
+.SS jpegapp
+.IX Subsection "jpegapp"
+Inject JPEG APP0..APP15 segments from a length-prefixed sidecar into each
+MJPEG packet, after SOI.
+.PP
+The sidecar is a sequence of records, one per encoded JPEG, in encode
+order:
+.PP
+.Vb 2
+\&        u32be length
+\&        u8    payload[length]
+.Ve
+.PP
+\&\fIlength\fR does not include the 4\-byte prefix and must not exceed
+16 MiB. A zero \fIlength\fR leaves that packet unchanged. A non-empty
+payload must be a concatenation of complete APP segments (\f(CW\*(C`FF En\*(C'\fR
+plus the 16\-bit length that includes those two length bytes).
+.PP
+If the payload starts with APP0 and the packet has an APP0 marker in
+the two bytes immediately following SOI, that APP0 segment is dropped.
+APP0 segments preceded by fill bytes or another segment are retained.
+An APP1\-only payload keeps the encoder APP0: SOI, APP1, APP0, DQT, ...
+.PP
+The filter requires \fBsidecar\fR. Extra unused sidecar bytes are
+ignored; a packet without a matching record is an error.
+Records follow packets in arrival order. Flushing the filter does not
+rewind the sidecar, so a reused context needs a sidecar positioned for
+the packets it will see next.
+A sidecar read or validation error prevents further record consumption
+by that filter context. To resume, create a new context with a sidecar
+matching the remaining packets. Flushing does not clear this error.
+.PP
+.Vb 1
+\&        ffmpeg \-i in.mp4 \-c:v mjpeg \-bsf:v jpegapp=sidecar=00000004DEADBEEF frame_%d.jpg
 .Ve
 .SS mjpeg2jpeg
 .IX Subsection "mjpeg2jpeg"
@@ -1220,6 +1266,30 @@ For example, to set PTS equal to DTS (not recommended if B\-frames are involved)
 .IX Subsection "showinfo"
 Log basic packet information. Mainly useful for testing, debugging,
 and development.
+.SS side_data
+.IX Subsection "side_data"
+Remove side data from packets and from the stream, or select packets by their
+side data.
+.PP
+It accepts the following parameters:
+.IP \fBremove\fR 4
+.IX Item "remove"
+Set the side data types to remove, joined with \fB+\fR, from the packets and
+from the side data of the stream. Each type is given by its handle;
+\&\fBffmpeg \-h bsf=side_data\fR lists them.
+.IP \fBselect\fR 4
+.IX Item "select"
+Set the side data types of the packets to keep, joined with \fB+\fR. A packet
+is kept if it carries any of them, and dropped otherwise. The selection looks
+at the side data before \fBremove\fR applies. Dropping a packet breaks the
+decoding of the packets that depend on it, so this is meant for analysis or for
+streams where each packet decodes on its own.
+.PP
+For example, to drop the display matrix and the replay gain of a stream:
+.PP
+.Vb 1
+\&        ffmpeg \-i INPUT \-c copy \-bsf:v side_data=remove=displaymatrix+replaygain output.mkv
+.Ve
 .SS smpte436m_to_eia608
 .IX Subsection "smpte436m_to_eia608"
 Convert from a \f(CW\*(C`SMPTE_436M_ANC\*(C'\fR data stream to a \f(CW\*(C`EIA_608\*(C'\fR stream,
@@ -1238,6 +1308,188 @@ This can be useful for debugging low-level stream issues.
 .PP
 Supports AV1, H.264, H.265, (M)JPEG, MPEG\-2 and VP9, but depending
 on the build only a subset of these may be available.
+.SS trim
+.IX Subsection "trim"
+Drop packets outside a given range, similar to the trim and atrim
+filters, but operating on packets instead of decoded frames.
+.PP
+The range is described by a \fBstart\fR and an \fBend\fR bound. At least
+one of them must be set. Each bound is fully described by three independent
+choices:
+.IP \(bu 4
+The discriminant it is compared against: the packet's presentation timestamp,
+its decoding timestamp, or its index. The two bounds need not use the same one,
+for instance a \f(CW\*(C`dts\*(C'\fR start with a \f(CW\*(C`pts\*(C'\fR end.
+.IP \(bu 4
+The unit its value is given in: the stream time base, milliseconds, or packets.
+.IP \(bu 4
+What it is counted from: zero, or its reference packet when \fBstart_rel\fR
+/ \fBend_rel\fR is set. For \fBstart\fR the reference packet is the first
+packet carrying that discriminant. For \fBend\fR it is the first exported
+packet.
+.PP
+The \fBstart_type\fR and \fBend_type\fR options name a combination of the
+three. The \f(CW\*(C`dur_ts\*(C'\fR and \f(CW\*(C`dur_t_msec\*(C'\fR end types are the always relative
+forms of \f(CW\*(C`pts\*(C'\fR and \f(CW\*(C`msec_pt\*(C'\fR. A zero duration therefore produces an
+empty stream.
+.PP
+Every packet is judged on its own discriminant, and on nothing else. A packet
+not carrying the discriminant its bound uses cannot be placed, and is dropped.
+.PP
+\&\fBstart_rel\fR makes \fBstart\fR an offset from a reference packet
+instead of an absolute value. The reference is the first packet carrying the
+discriminant that bound uses. Its value is added to the offset once, and the
+bound stays there for the rest of the stream.
+.PP
+\&\fBend_rel\fR anchors on the first exported packet instead, at the position
+\&\fBstart\fR trimmed it to. The two bounds therefore move together.
+.PP
+Only a discriminant that cannot come back into the range ends the stream, namely
+the packet index or the decoding timestamp. End of stream is signaled once one
+of those passes the \fBend\fR bound. A presentation timestamp past the end
+only drops its packet, so that later packets still inside the range are not
+lost.
+.PP
+A bound given in a time unit can fall inside a packet rather than between two.
+Such a packet is trimmed. Set \fBtrim_packets\fR to false to keep every
+packet exactly as it came in: exported whole if its own value is inside the
+range, dropped otherwise.
+.PP
+Audio is trimmed in sample space, through skip samples side data. The timestamps
+and duration are left untouched, and a decoder discards the signaled samples on
+output. This needs a sample rate and a time base. Audio missing either is
+rejected rather than trimmed on the timeline. Every other media type is trimmed
+by shifting the packet timestamps and shortening its duration.
+.PP
+Trimming inside an audio packet needs the number of samples it decodes to. Where
+the codec does not give that number, the packet is handled as though
+\&\fBtrim_packets\fR were false.
+.PP
+A skip larger than the packet carrying it continues into the packets after it.
+Dropping such a packet carries the remainder over to the next one. A skip that
+packet already carries replaces the remainder, as a decoder would, and the
+larger of it and this filter's own trim wins.
+.PP
+By default a packet outside the range is dropped, whether or not later packets
+depend on it. Streams of independent frames, such as ADTS or intra only video,
+can be cut anywhere. Cutting an inter coded stream inside a group of pictures
+leaves the first packets in range undecodable.
+.PP
+Set \fBpreroll\fR to export the packets those first packets depend on as
+well. They are flagged for a decoder to decode and then drop, so the frames it
+outputs still begin at the \fBstart\fR bound. Only a decoder acts on that
+flag. Use \fBpreroll\fR where the stream is decoded. A muxer writes the extra
+packets like any other. A remux then covers more than the requested range.
+.PP
+\&\fBpreroll\fR covers the start of the range only. On a stream with B\-frames
+an \fBend\fR bound on the presentation timestamp can drop a packet the last
+frames in the range need. Those frames then decode incorrectly.
+.PP
+It accepts the following parameters:
+.IP \fBstart\fR 4
+.IX Item "start"
+Time or index marking the start of the accepted range. Packets before it are
+dropped. A packet straddling it is trimmed at its start, or dropped when
+\&\fBtrim_packets\fR is false.
+.IP \fBstart_type\fR 4
+.IX Item "start_type"
+How to interpret \fBstart\fR:
+.RS 4
+.IP \fBpts\fR 4
+.IX Item "pts"
+Presentation timestamp, in stream time base (default).
+.IP \fBdts\fR 4
+.IX Item "dts"
+Decoding timestamp, in stream time base.
+.IP \fBpkt_index\fR 4
+.IX Item "pkt_index"
+Packet index, counting from zero.
+.IP \fBmsec_pt\fR 4
+.IX Item "msec_pt"
+Milliseconds, matched against the presentation timestamp.
+.IP \fBmsec_dt\fR 4
+.IX Item "msec_dt"
+Milliseconds, matched against the decoding timestamp.
+.RE
+.RS 4
+.RE
+.IP \fBstart_rel\fR 4
+.IX Item "start_rel"
+Count \fBstart\fR from the reference packet rather than from zero. Has no
+effect on \fBpkt_index\fR, whose first packet is already zero. Default false.
+.IP \fBend\fR 4
+.IX Item "end"
+Time or index marking the end of the accepted range. Signals end of stream when
+reached. A packet straddling it is trimmed at its end, or exported untouched
+when \fBtrim_packets\fR is false.
+.IP \fBend_type\fR 4
+.IX Item "end_type"
+How to interpret \fBend\fR. Same values as \fBstart_type\fR, plus:
+.RS 4
+.IP \fBdur_ts\fR 4
+.IX Item "dur_ts"
+Duration in stream time base. Same as \fBpts\fR with \fBend_rel\fR set.
+.IP \fBdur_t_msec\fR 4
+.IX Item "dur_t_msec"
+Duration in milliseconds. Same as \fBmsec_pt\fR with \fBend_rel\fR set.
+.RE
+.RS 4
+.RE
+.IP \fBend_rel\fR 4
+.IX Item "end_rel"
+Count \fBend\fR from the first exported packet rather than from zero. The
+reference is that packet's value on the discriminant \fBend_type\fR names. On
+a timestamp it is taken at the position the packet is trimmed to. For audio that
+is the time of its first retained sample. The skip that packet carries can push
+it past the packet itself. With \fBpkt_index\fR it exports a fixed number of
+packets, which can be combined with a timestamp-based \fBstart\fR. Always set
+for the duration types. Default false.
+.IP \fBtrim_packets\fR 4
+.IX Item "trim_packets"
+Trim packets straddling a boundary. When false, packets are exported exactly as
+they came in, with no timestamp adjustment and no skip samples side data. A
+packet is then exported untouched if its value falls inside the range, and
+dropped otherwise. Default true.
+.IP \fBpreroll\fR 4
+.IX Item "preroll"
+Export the packets a decoder needs to decode the first packet in range, rather
+than dropping them for falling before the \fBstart\fR bound. The filter holds
+every packet from the last keyframe on. It exports them ahead of the first
+packet in range, carrying \f(CW\*(C`AV_PKT_FLAG_DISCARD\*(C'\fR.
+.Sp
+Video only. Default false.
+.IP \fBpreroll_size\fR 4
+.IX Item "preroll_size"
+Maximum number of packets held for \fBpreroll\fR. A group of pictures longer
+than this is dropped whole, with a warning naming the count to raise it past.
+Default 300, which covers the keyframe intervals encoders commonly default to.
+.PP
+For example, to keep only the 10 first packets of an ADTS stream:
+.PP
+.Vb 1
+\&        ffmpeg \-i INPUT.aac \-c copy \-bsf:a trim=end=10:end_type=pkt_index OUTPUT.aac
+.Ve
+.PP
+To keep 5 seconds starting 1.5 seconds into the stream:
+.PP
+.Vb 1
+\&        ffmpeg \-i INPUT.aac \-c copy \-bsf:a trim=start=1500:start_type=msec_pt:end=5000:end_type=dur_t_msec OUTPUT.aac
+.Ve
+.PP
+The same, expressed relative to the first packet so it works regardless of the
+stream's starting timestamp:
+.PP
+.Vb 1
+\&        ffmpeg \-i INPUT.aac \-c copy \-bsf:a trim=start=1500:start_type=msec_pt:start_rel=1:end=5000:end_type=dur_t_msec OUTPUT.aac
+.Ve
+.PP
+To start on a keyframeless point of an inter coded video stream, re-encoding it
+so that the preroll is decoded rather than written out. The filter must run
+before the decoder, so it is given before the input:
+.PP
+.Vb 1
+\&        ffmpeg \-bsf:v trim=start=17000:start_type=msec_pt:end=30000:end_type=dur_t_msec:preroll=1 \-i INPUT.mp4 OUTPUT.mp4
+.Ve
 .SS truehd_core
 .IX Subsection "truehd_core"
 Extract the core from a TrueHD stream, dropping ATMOS data.

@@ -56,19 +56,6 @@
 <a name="Unix_002dlike"></a>
 <h2 class="chapter">1 Unix-like<span class="pull-right"><a class="anchor hidden-xs" href="#Unix_002dlike" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Unix_002dlike" aria-hidden="true">TOC</a></span></h2>
 
-<p>Some parts of FFmpeg cannot be built with version 2.15 of the GNU
-assembler which is still provided by a few AMD64 distributions. To
-make sure your compiler really uses the required version of gas
-after a binutils upgrade, run:
-</p>
-<div class="example">
-<pre class="example-preformatted">$(gcc -print-prog-name=as) --version
-</pre></div>
-
-<p>If not, then you should install a different compiler that has no
-hard-coded path to gas. In the worst case pass <code class="code">--disable-asm</code>
-to configure.
-</p>
 <a name="Advanced-linking-configuration"></a>
 <h3 class="section">1.1 Advanced linking configuration<span class="pull-right"><a class="anchor hidden-xs" href="#Advanced-linking-configuration" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Advanced-linking-configuration" aria-hidden="true">TOC</a></span></h3>
 
@@ -94,35 +81,19 @@ pass the correct linking flag (e.g. <code class="code">-pie</code>) to <code cla
 <h3 class="section">1.3 (Open)Solaris<span class="pull-right"><a class="anchor hidden-xs" href="#_0028Open_0029Solaris" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-_0028Open_0029Solaris" aria-hidden="true">TOC</a></span></h3>
 
 <p>GNU Make is required to build FFmpeg, so you have to invoke (<code class="command">gmake</code>),
-standard Solaris Make will not work. When building with a non-c99 front-end
-(gcc, generic suncc) add either <code class="code">--extra-libs=/usr/lib/values-xpg6.o</code>
-or <code class="code">--extra-libs=/usr/lib/64/values-xpg6.o</code> to the configure options
-since the libc is not c99-compliant by default. The probes performed by
-configure may raise an exception leading to the death of configure itself
-due to a bug in the system shell. Simply invoke a different shell such as
-bash directly to work around this:
+standard Solaris Make will not work.
 </p>
-<div class="example">
-<pre class="example-preformatted">bash ./configure
-</pre></div>
-
 <a class="anchor" id="Darwin"></a><a name="Darwin-_0028Mac-OS-X_002c-iPhone_0029"></a>
 <h3 class="section">1.4 Darwin (Mac OS X, iPhone)<span class="pull-right"><a class="anchor hidden-xs" href="#Darwin-_0028Mac-OS-X_002c-iPhone_0029" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Darwin-_0028Mac-OS-X_002c-iPhone_0029" aria-hidden="true">TOC</a></span></h3>
 
 <p>The toolchain provided with Xcode is sufficient to build the basic
 unaccelerated code.
 </p>
-<p>Mac OS X on PowerPC or ARM (iPhone) requires a preprocessor from
-<a class="url" href="https://github.com/FFmpeg/gas-preprocessor">https://github.com/FFmpeg/gas-preprocessor</a> or
-<a class="url" href="https://github.com/yuvi/gas-preprocessor">https://github.com/yuvi/gas-preprocessor</a>(currently outdated) to build the optimized
-assembly functions. Put the Perl script somewhere
-in your PATH, FFmpeg&rsquo;s configure will pick it up automatically.
-</p>
-<p>Mac OS X on amd64 and x86 requires <code class="command">nasm</code> to build most of the
-optimized assembly functions. <a class="uref" href="http://www.finkproject.org/">Fink</a>,
+<p>macOS on x86 requires <code class="command">nasm</code> to build most of the
+optimized assembly functions.
 <a class="uref" href="https://wiki.gentoo.org/wiki/Project:Prefix">Gentoo Prefix</a>,
-<a class="uref" href="https://mxcl.github.com/homebrew/">Homebrew</a>
-or <a class="uref" href="http://www.macports.org">MacPorts</a> can easily provide it.
+<a class="uref" href="https://brew.sh/">Homebrew</a>
+or <a class="uref" href="https://www.macports.org">MacPorts</a> can easily provide it.
 </p>
 
 <a name="DOS"></a>
@@ -147,17 +118,17 @@ or <a class="uref" href="http://www.macports.org">MacPorts</a> can easily provid
 
 <p>FFmpeg can be built to run natively on Windows using the MinGW-w64
 toolchain. Install the latest versions of MSYS2 and MinGW-w64 from
-<a class="url" href="http://msys2.github.io/">http://msys2.github.io/</a> and/or <a class="url" href="http://mingw-w64.sourceforge.net/">http://mingw-w64.sourceforge.net/</a>.
+<a class="url" href="https://www.msys2.org/">https://www.msys2.org/</a> and/or <a class="url" href="https://www.mingw-w64.org/">https://www.mingw-w64.org/</a>.
 You can find detailed installation instructions in the download section and
 the FAQ.
 </p>
 <p>Notes:
 </p>
 <ul class="itemize mark-bullet">
-<li>Building for the MSYS environment is discouraged, MSYS2 provides a full
-MinGW-w64 environment through <samp class="file">mingw64_shell.bat</samp> or
-<samp class="file">mingw32_shell.bat</samp> that should be used instead of the environment
-provided by <samp class="file">msys2_shell.bat</samp>.
+<li>Building for the MSYS environment is discouraged, use one of the
+MinGW-w64 environments provided by MSYS2 instead. UCRT64 provides a GCC
+based toolchain, CLANG64 a LLVM based one and CLANGARM64 targets Windows
+on ARM64.
 
 </li><li>Building using MSYS2 can be sped up by disabling implicit rules in the
 Makefile by calling <code class="code">make -r</code> instead of plain <code class="code">make</code>. This
@@ -177,38 +148,41 @@ libavformat) as DLLs.
 <a name="Native-Windows-compilation-using-MSYS2"></a>
 <h4 class="subsection">4.1.1 Native Windows compilation using MSYS2<span class="pull-right"><a class="anchor hidden-xs" href="#Native-Windows-compilation-using-MSYS2" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Native-Windows-compilation-using-MSYS2" aria-hidden="true">TOC</a></span></h4>
 
-<p>The MSYS2 MinGW-w64 environment provides ready to use toolchains and dependencies
-through <code class="command">pacman</code>.
+<p>The MSYS2 MinGW-w64 environments provide ready to use toolchains and
+dependencies through <code class="command">pacman</code>.
 </p>
-<p>Make sure to use <samp class="file">mingw64_shell.bat</samp> or <samp class="file">mingw32_shell.bat</samp> to have
-the correct MinGW-w64 environment. The default install provides shortcuts to
-them under <code class="command">MinGW-w64 Win64 Shell</code> and <code class="command">MinGW-w64 Win32 Shell</code>.
+<p>Launch the shell of the environment you want to build in using its
+launcher, for example <samp class="file">ucrt64.exe</samp> or the corresponding start menu
+shortcut for UCRT64. Then install the toolchain and the FFmpeg
+dependencies. The <code class="command">pacboy</code> wrapper from the <code class="code">pactoys</code>
+package fills in the package name prefix of the current environment, so
+the same command works in every environment.
 </p>
 <div class="example">
 <pre class="example-preformatted"># normal msys2 packages
-pacman -S make pkgconf diffutils
+pacman -S make pkgconf diffutils pactoys
 
-# mingw-w64 packages and toolchains
-pacman -S mingw-w64-x86_64-nasm mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2
+# mingw-w64 packages and toolchains for the current environment
+pacboy -S cc nasm SDL2
 </pre></div>
 
-<p>To target 32 bits replace <code class="code">x86_64</code> with <code class="code">i686</code> in the command above.
-</p>
 <a name="Microsoft-Visual-C_002b_002b-or-Intel-C_002b_002b-Compiler-for-Windows"></a>
 <h3 class="section">4.2 Microsoft Visual C++ or Intel C++ Compiler for Windows<span class="pull-right"><a class="anchor hidden-xs" href="#Microsoft-Visual-C_002b_002b-or-Intel-C_002b_002b-Compiler-for-Windows" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Microsoft-Visual-C_002b_002b-or-Intel-C_002b_002b-Compiler-for-Windows" aria-hidden="true">TOC</a></span></h3>
 
-<p>FFmpeg can be built with MSVC 2013 or later.
+<p>FFmpeg can be built with MSVC 2019 16.8 or later, the first version able to
+compile C11.
 </p>
 <p>You will need the following prerequisites:
 </p>
 <ul class="itemize mark-bullet">
-<li><a class="uref" href="http://msys2.github.io/">MSYS2</a>
-</li><li><a class="uref" href="http://www.nasm.us/">NASM</a>
+<li><a class="uref" href="https://www.msys2.org/">MSYS2</a>
+</li><li><a class="uref" href="https://www.nasm.us/">NASM</a>
 (Also available via MSYS2&rsquo;s package manager.)
 </li></ul>
 
-<p>To set up a proper environment in MSYS2, you need to run <code class="code">msys_shell.bat</code> from
-the Visual Studio or Intel Compiler command prompt.
+<p>To set up a proper environment in MSYS2, you need to run
+<code class="code">msys2_shell.cmd -use-full-path</code> from the Visual Studio or Intel Compiler
+command prompt.
 </p>
 <p>Place <code class="code">nasm.exe</code> somewhere in your <code class="code">PATH</code>.
 </p>
@@ -255,14 +229,6 @@ erroneously included when building FFmpeg.
 can see.
 </li></ol>
 
-</li><li>FFmpeg has been tested with the following on i686 and x86_64:
-<ul class="itemize mark-bullet">
-<li>Visual Studio 2013 Pro and Express
-</li><li>Intel Composer XE 2013
-</li><li>Intel Composer XE 2013 SP1
-</li></ul>
-<p>Anything else is not officially supported.
-</p>
 </li></ul>
 
 <a name="Linking-to-FFmpeg-with-Microsoft-Visual-C_002b_002b"></a>
@@ -271,14 +237,6 @@ can see.
 <p>If you plan to link with MSVC-built static libraries, you will need
 to make sure you have <code class="code">Runtime Library</code> set to
 <code class="code">Multi-threaded (/MT)</code> in your project&rsquo;s settings.
-</p>
-<p>You will need to define <code class="code">inline</code> to something MSVC understands:
-</p><div class="example">
-<pre class="example-preformatted">#define inline __inline
-</pre></div>
-
-<p>Also note, that as stated in <strong class="strong">Microsoft Visual C++</strong>, you will need
-an MSVC-compatible <a class="uref" href="http://code.google.com/p/msinttypes/">inttypes.h</a>.
 </p>
 <p>If you plan on using import libraries created by dlltool, you must
 set <code class="code">References</code> to <code class="code">No (/OPT:NOREF)</code> under the linker optimization
@@ -293,10 +251,8 @@ This issue is reported upstream at
 <ol class="enumerate">
 <li> Open the <em class="emph">Visual Studio Command Prompt</em>.
 
-<p>Alternatively, in a normal command line prompt, call <samp class="file">vcvars32.bat</samp>
-which sets up the environment variables for the Visual C++ tools
-(the standard location for this file is something like
-<samp class="file">C:\Program Files (x86_\Microsoft Visual Studio 10.0\VC\bin\vcvars32.bat</samp>).
+<p>Alternatively, in a normal command line prompt, call <samp class="file">vcvarsall.bat</samp>
+which sets up the environment variables for the Visual C++ tools.
 </p>
 </li><li> Enter the <samp class="file">bin</samp> directory where the created LIB and DLL files
 are stored.
@@ -314,28 +270,25 @@ are stored.
 <a class="anchor" id="Cross-compilation-for-Windows-with-Linux"></a><a name="Cross-compilation-for-Windows-with-Linux-1"></a>
 <h3 class="section">4.3 Cross compilation for Windows with Linux<span class="pull-right"><a class="anchor hidden-xs" href="#Cross-compilation-for-Windows-with-Linux" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Cross-compilation-for-Windows-with-Linux" aria-hidden="true">TOC</a></span></h3>
 
-<p>You must use the MinGW cross compilation tools available at
-<a class="url" href="http://www.mingw.org/">http://www.mingw.org/</a>.
+<p>You must use the MinGW-w64 cross compilation tools, which most Linux
+distributions provide as packages.
 </p>
 <p>Then configure FFmpeg with the following options:
 </p><div class="example">
-<pre class="example-preformatted">./configure --target-os=mingw32 --cross-prefix=i386-mingw32msvc-
+<pre class="example-preformatted">./configure --arch=x86_64 --target-os=mingw32 --cross-prefix=x86_64-w64-mingw32-
 </pre></div>
 <p>(you can change the cross-prefix according to the prefix chosen for the
-MinGW tools).
+MinGW-w64 tools).
 </p>
-<p>Then you can easily test FFmpeg with <a class="uref" href="http://www.winehq.com/">Wine</a>.
+<p>Then you can easily test FFmpeg with <a class="uref" href="https://www.winehq.org/">Wine</a>.
 </p>
 <a name="Compilation-under-Cygwin"></a>
 <h3 class="section">4.4 Compilation under Cygwin<span class="pull-right"><a class="anchor hidden-xs" href="#Compilation-under-Cygwin" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Compilation-under-Cygwin" aria-hidden="true">TOC</a></span></h3>
 
-<p>Please use Cygwin 1.7.x as the obsolete 1.5.x Cygwin versions lack
-llrint() in its C library.
-</p>
 <p>Install your Cygwin with all the &quot;Base&quot; packages, plus the
 following &quot;Devel&quot; ones:
 </p><div class="example">
-<pre class="example-preformatted">binutils, gcc4-core, make, git, mingw-runtime, texinfo
+<pre class="example-preformatted">binutils, gcc-core, make, git, texinfo
 </pre></div>
 
 <p>In order to run FATE you will also need the following &quot;Utils&quot; packages:
@@ -349,38 +302,20 @@ following &quot;Devel&quot; ones:
 <pre class="example-preformatted">libogg-devel, libvorbis-devel
 </pre></div>
 
-<p>These library packages are only available from
-<a class="uref" href="http://sourceware.org/cygwinports/">Cygwin Ports</a>:
-</p>
-<div class="example">
-<pre class="example-preformatted">libSDL-devel, libgsm-devel, libmp3lame-devel,
-speex-devel, libtheora-devel, libxvidcore-devel
-</pre></div>
-
-<p>The recommendation for x264 is to build it from source, as it evolves too
-quickly for Cygwin Ports to be up to date.
-</p>
 <a name="Crosscompilation-for-Windows-under-Cygwin"></a>
 <h3 class="section">4.5 Crosscompilation for Windows under Cygwin<span class="pull-right"><a class="anchor hidden-xs" href="#Crosscompilation-for-Windows-under-Cygwin" aria-hidden="true">#</a> <a class="anchor hidden-xs"href="#toc-Crosscompilation-for-Windows-under-Cygwin" aria-hidden="true">TOC</a></span></h3>
 
 <p>With Cygwin you can create Windows binaries that do not need the cygwin1.dll.
 </p>
-<p>Just install your Cygwin as explained before, plus these additional
-&quot;Devel&quot; packages:
+<p>Just install your Cygwin as explained before, plus the MinGW-w64 cross
+toolchain &quot;Devel&quot; packages:
 </p><div class="example">
-<pre class="example-preformatted">gcc-mingw-core, mingw-runtime, mingw-zlib
+<pre class="example-preformatted">mingw64-x86_64-gcc-core, mingw64-x86_64-binutils
 </pre></div>
 
-<p>and add some special flags to your configure invocation.
-</p>
-<p>For a static build run
+<p>and configure with:
 </p><div class="example">
-<pre class="example-preformatted">./configure --target-os=mingw32 --extra-cflags=-mno-cygwin --extra-libs=-mno-cygwin
-</pre></div>
-
-<p>and for a build with shared libraries
-</p><div class="example">
-<pre class="example-preformatted">./configure --target-os=mingw32 --enable-shared --disable-static --extra-cflags=-mno-cygwin --extra-libs=-mno-cygwin
+<pre class="example-preformatted">./configure --arch=x86_64 --target-os=mingw32 --cross-prefix=x86_64-w64-mingw32-
 </pre></div>
 
 <a name="ARM64EC"></a>

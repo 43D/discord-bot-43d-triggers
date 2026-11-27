@@ -692,6 +692,10 @@ show audio waves
 .IP "\fB2, rdft\fR" 4
 .IX Item "2, rdft"
 show audio frequency band using RDFT ((Inverse) Real Discrete Fourier Transform)
+.IP "\fB3, phase\fR" 4
+.IX Item "3, phase"
+like rdft, with stereo content whose left channel leads in phase shown in
+blue and whose right channel leads shown in yellow
 .RE
 .RS 4
 .Sp
@@ -878,6 +882,33 @@ Seek backward/forward 1 minute.
 .IP "\fBpage down/page up\fR" 4
 .IX Item "page down/page up"
 Seek to previous/next chapter or backward/forward 10 minutes if no chapters.
+The chapter list is shown briefly, marking the chapter being played at its
+left edge. It needs libass and the SDL renderer, so it is unavailable
+in builds without libass and with the Vulkan renderer.
+.IP \fBl\fR 4
+.IX Item "l"
+Keep the chapter list on screen. While it is kept, typing filters the list by
+artist and title, down/up move its selection and escape closes it.
+.IP \fBo\fR 4
+.IX Item "o"
+Show the files in the directory of the input. Enter or a click plays the
+selected file or opens the selected directory, escape closes the list. Typing
+filters the list by name.
+.IP \fBenter\fR 4
+.IX Item "enter"
+Seek to the chapter selected in the chapter list while it is shown.
+.IP "\fBmouse wheel\fR" 4
+.IX Item "mouse wheel"
+Move the chapter list selection while it is shown.
+.IP "\fBmouse over the (i) symbol\fR" 4
+.IX Item "mouse over the (i) symbol"
+Show the metadata of that chapter list entry.
+.IP "\fBleft mouse click\fR" 4
+.IX Item "left mouse click"
+Seek to the clicked chapter list entry, or sort the list by the clicked column
+button. Clicking the same button again flips the order, and ties are resolved
+by the columns clicked before. The shuffle button orders the list by a seed
+that its left half lowers and its right half raises.
 .IP "\fBright mouse click\fR" 4
 .IX Item "right mouse click"
 Seek to percentage in file corresponding to fraction of width.

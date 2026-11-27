@@ -524,8 +524,11 @@ of the other. Its audio counterpart is the <code class="code">amix</code> filter
 <p>While decoders are normally associated with demuxer streams, it is also possible
 to create &quot;loopback&quot; decoders that decode the output from some encoder and allow
 it to be fed back to complex filtergraphs. This is done with the <code class="code">-dec</code>
-directive, which takes as a parameter the index of the output stream that should
-be decoded. Every such directive creates a new loopback decoder, indexed with
+directive, which takes as a parameter <var class="var">output_file_index</var>:<var class="var">stream_index</var>
+to select the output stream that should be decoded. Both indices are zero-based
+integers: the first identifies the output file and the second identifies the
+stream within that file. Stream specifiers such as <code class="code">v:0</code> are not supported.
+Every such directive creates a new loopback decoder, indexed with
 successive integers starting at zero. These indices should then be used to refer
 to loopback decoders in complex filtergraph link labels, as described in the
 documentation for <samp class="option">-filter_complex</samp>.
@@ -1470,6 +1473,47 @@ also possible to delete metadata by using an empty value.
 </pre></div>
 
 </dd>
+<dt><samp class="option">-keep_metadata[:<var class="var">metadata_specifier</var>] <var class="var">key</var> (<em class="emph">output,per-metadata</em>)</samp></dt>
+<dd><p>When re-encoding a stream, certain metadata keys that are likely to become stale
+(such as <code class="code">iTunSMPB</code> or <code class="code">encoded_by</code>) are automatically discarded.
+This option prevents a specific key from being discarded, preserving its original
+value from the input.
+</p>
+<p>Without a specifier, the key is preserved in all metadata contexts (format and
+streams). Use <code class="code">g</code> to restrict to format (global) metadata, or <code class="code">s</code> with
+an optional stream specifier to restrict to matching streams only.
+</p>
+<p>For example, to keep <code class="code">iTunSMPB</code> in format metadata only when re-encoding:
+</p><div class="example">
+<pre class="example-preformatted">ffmpeg -i in.mp3 -keep_metadata:g iTunSMPB out.mp3
+</pre></div>
+
+<p>To keep <code class="code">NUMBER_OF_BYTES</code> only for the video stream:
+</p><div class="example">
+<pre class="example-preformatted">ffmpeg -i in.mkv -keep_metadata:s:v NUMBER_OF_BYTES out.mkv
+</pre></div>
+
+<p>Some keys are stored in the metadata with a suffix (e.g.
+<code class="code">NUMBER_OF_BYTES-eng</code>). Specifying the unsuffixed family name (e.g.
+<code class="code">NUMBER_OF_BYTES</code>) keeps all variants. To keep only a specific one,
+specify the full key explicitly:
+</p><div class="example">
+<pre class="example-preformatted">ffmpeg -i in.mkv -keep_metadata:s:v NUMBER_OF_BYTES-eng out.mkv
+</pre></div>
+
+<p>Some (such as <code class="code">major_brand</code>, <code class="code">minor_version</code>, and
+<code class="code">compatible_brands</code>) are always removed regardless of re-encoding, because
+they describe the source container and are meaningless in the output.
+<code class="code">-keep_metadata</code> applies to those keys even when stream-copying.
+</p>
+<p>Re-encoding-only keys (such as encoder tags and Matroska stream statistics) are
+removed from a stream&rsquo;s metadata only when that stream is being re-encoded, and
+from format metadata only when at least one audio or video stream is re-encoded.
+</p>
+<p>Only format and stream metadata are filtered. Chapter and program metadata
+are never modified by this mechanism.
+</p>
+</dd>
 <dt><samp class="option">-disposition[:stream_specifier] <var class="var">value</var> (<em class="emph">output,per-stream</em>)</samp></dt>
 <dd><p>Sets the disposition flags for a stream.
 </p>
@@ -1777,6 +1821,22 @@ all sub-mix element&rsquo;s <var class="var">annotations</var>s
 </dl>
 
 </dd>
+<dt><samp class="option">gain_map</samp></dt>
+<dd><p>Groups together a base <var class="var">stream</var> with a gain map, which together form a
+pair of renditions (e.g. HDR and SDR) as per ISO 21496-1.
+</p>
+<p>For this group <var class="var">type</var>, the following options are available
+</p>
+<dl class="table">
+<dt><samp class="option">el_index</samp></dt>
+<dd><p>Index of the gain map stream within the group. Defaults to 0.
+</p></dd>
+<dt><samp class="option">video_size</samp></dt>
+<dd><p>Size of the final image for presentation.
+</p></dd>
+</dl>
+
+</dd>
 </dl>
 
 <p>E.g. to create an scalable 5.1 IAMF file from several WAV input files
@@ -1800,6 +1860,14 @@ streams into an mp4 output
 -streamid 0:0 -streamid 1:1 -streamid 2:2 -streamid 3:3 output.mp4
 </pre></div>
 
+</dd>
+<dt><samp class="option">-reinit_opts[:<var class="var">stream_specifier</var>] pts=<var class="var">pts</var>|<var class="var">key</var>=<var class="var">value</var>[:force_reinit=1][:<var class="var">key</var>=<var class="var">value</var>,pts=<var class="var">pts</var>...] (<em class="emph">output,per-stream</em>)</samp></dt>
+<dd>
+<p>Creates a &quot;,&quot; separated group of options to reconfigure an encoder at the
+specified output <var class="var">pts</var> in AV_TIME_BASE units.
+The pseudo-option <var class="var">force_reinit</var> ensures the encoder is fully reinitialized
+instead of simply reconfigured.
+</p>
 </dd>
 <dt><samp class="option">-target <var class="var">type</var> (<em class="emph">output</em>)</samp></dt>
 <dd><p>Specify target file type (<code class="code">vcd</code>, <code class="code">svcd</code>, <code class="code">dvd</code>, <code class="code">dv</code>,
@@ -1984,7 +2052,7 @@ will produce a thread pool with this many threads available for parallel process
 The default is the number of available CPUs.
 </p>
 </dd>
-<dt><samp class="option">-filter_buffered_frames <var class="var">nb_frames</var> (<em class="emph">global</em>)</samp></dt>
+<dt><samp class="option">-filter_buffered_frames[:<var class="var">media_type</var>] <var class="var">nb_frames</var> (<em class="emph">global</em>)</samp></dt>
 <dd><p>Defines the maximum number of buffered frames allowed in a filtergraph. Under
 normal circumstances, a filtergraph should not buffer more than a few frames,
 especially if frames are being fed to it and read from it in a balanced way
@@ -1992,6 +2060,11 @@ especially if frames are being fed to it and read from it in a balanced way
 to limit the total number of frames buffered across all links in a filtergraph.
 If more frames are generated, filtering is aborted and an error is returned.
 The default value is 0, which means no limit.
+</p>
+<p>The optional suffix <var class="var">media_type</var> may be used to set a different limit
+for audio and video frames, using the suffixes <code class="code">a</code> and <code class="code">v</code>,
+respectively. If the suffix is omitted, the limit applies to both audio and
+video frames, separately.
 </p>
 </dd>
 <dt><samp class="option">-pre[:<var class="var">stream_specifier</var>] <var class="var">preset_name</var> (<em class="emph">output,per-stream</em>)</samp></dt>
@@ -2160,6 +2233,49 @@ numerator and denominator of the aspect ratio. For example &quot;4:3&quot;,
 <p>If used together with <samp class="option">-vcodec copy</samp>, it will affect the aspect ratio
 stored at container level, but not the aspect ratio stored in encoded
 frames, if it exists.
+</p>
+</dd>
+<dt><samp class="option">-stereo3d[:<var class="var">stream_specifier</var>] <var class="var">layout</var> (<em class="emph">output,per-stream</em>)</samp></dt>
+<dd><p>Set stereoscopic 3D layout metadata on the output stream. This does
+<em class="emph">not</em> rearrange pixels; use <samp class="option">-vf stereo3d</samp> for that.
+</p>
+<p>The metadata is stored as <code class="code">AV_PKT_DATA_STEREO3D</code> side data on the
+output stream. Muxers that already consume that side data will write the
+corresponding container boxes or elements, including:
+</p>
+<ul class="itemize mark-bullet">
+<li>MP4 Google spatial-media <code class="code">st3d</code> (requires <samp class="option">-strict unofficial</samp>)
+</li><li>QuickTime MOV Apple <code class="code">vexu</code> eyes (no <code class="code">st3d</code>)
+</li><li>Matroska <code class="code">StereoMode</code>; <samp class="option">-stereo3d</samp> overrides the
+<code class="code">stereo_mode</code> metadata tag, including a value inherited from the
+input
+</li></ul>
+
+<p><var class="var">layout</var> is case-insensitive. The following values are accepted:
+</p>
+<dl class="table">
+<dt>&lsquo;<samp class="samp">2d</samp>&rsquo;</dt>
+<dt>&lsquo;<samp class="samp">mono</samp>&rsquo;</dt>
+<dd><p>Monoscopic video.
+</p></dd>
+<dt>&lsquo;<samp class="samp">sbs</samp>&rsquo;</dt>
+<dt>&lsquo;<samp class="samp">sbsl</samp>&rsquo;</dt>
+<dt>&lsquo;<samp class="samp">side by side</samp>&rsquo;</dt>
+<dd><p>Side-by-side, left eye on the left.
+</p></dd>
+<dt>&lsquo;<samp class="samp">tb</samp>&rsquo;</dt>
+<dt>&lsquo;<samp class="samp">tbl</samp>&rsquo;</dt>
+<dt>&lsquo;<samp class="samp">top and bottom</samp>&rsquo;</dt>
+<dd><p>Top-and-bottom, left eye on top.
+</p></dd>
+</dl>
+
+<p>Inverted layouts such as &lsquo;<samp class="samp">sbsr</samp>&rsquo; are not supported. An empty stream
+specifier applies to video streams only and is ignored for audio and
+other types. An explicit specifier on a non-video stream (for example
+<samp class="option">-stereo3d:a</samp>) is an error.
+</p>
+<p>Recommended form: <samp class="option">-stereo3d:v sbsl</samp>.
 </p>
 </dd>
 <dt><samp class="option">-display_rotation[:<var class="var">stream_specifier</var>] <var class="var">rotation</var> (<em class="emph">input,per-stream</em>)</samp></dt>
@@ -3143,28 +3259,22 @@ specified readrate, then this rate takes effect till the input catches up with t
 specified readrate. Must not be lower than the primary readrate.
 </p>
 </dd>
-<dt><samp class="option">-vsync <var class="var">parameter</var> (<em class="emph">global</em>)</samp></dt>
 <dt><samp class="option">-fps_mode[:<var class="var">stream_specifier</var>] <var class="var">parameter</var> (<em class="emph">output,per-stream</em>)</samp></dt>
-<dd><p>Set video sync method / framerate mode. vsync is applied to all output video streams
-but can be overridden for a stream by setting fps_mode. vsync is deprecated and will be
-removed in the future.
-</p>
-<p>For compatibility reasons some of the values for vsync can be specified as numbers (shown
-in parentheses in the following table).
+<dd><p>Set video sync method / framerate mode.
 </p>
 <dl class="table">
-<dt><samp class="option">passthrough (0)</samp></dt>
+<dt><samp class="option">passthrough</samp></dt>
 <dd><p>Each frame is passed with its timestamp from the demuxer to the muxer.
 </p></dd>
-<dt><samp class="option">cfr (1)</samp></dt>
+<dt><samp class="option">cfr</samp></dt>
 <dd><p>Frames will be duplicated and dropped to achieve exactly the requested
 constant frame rate.
 </p></dd>
-<dt><samp class="option">vfr (2)</samp></dt>
+<dt><samp class="option">vfr</samp></dt>
 <dd><p>Frames are passed through with their timestamp or dropped so as to
 prevent 2 frames from having the same timestamp.
 </p></dd>
-<dt><samp class="option">auto (-1)</samp></dt>
+<dt><samp class="option">auto</samp></dt>
 <dd><p>Chooses between cfr and vfr depending on muxer capabilities. This is the
 default method.
 </p></dd>
@@ -3198,7 +3308,7 @@ Argument is a string of filter parameters composed the same as with the <code cl
 to sanitize them. In particular, do not remove the initial start time
 offset value.
 </p>
-<p>Note that, depending on the <samp class="option">vsync</samp> option or on specific muxer
+<p>Note that, depending on the <samp class="option">fps_mode</samp> option or on specific muxer
 processing (e.g. in case the format option <samp class="option">avoid_negative_ts</samp>
 is enabled) the output timestamps may mismatch with the input
 timestamps even when this option is selected.
@@ -3528,14 +3638,8 @@ offset by the start time of the file. This matters only for files which do
 not start from timestamp 0, such as transport streams.
 </p>
 </dd>
-<dt><samp class="option">-thread_queue_size <var class="var">size</var> (<em class="emph">input/output</em>)</samp></dt>
-<dd><p>For input, this option sets the maximum number of queued packets when reading
-from the file or device. With low latency / high rate live streams, packets may
-be discarded if they are not read in a timely manner; setting this value can
-force ffmpeg to use a separate input thread and read packets as soon as they
-arrive. By default ffmpeg only does this if multiple inputs are specified.
-</p>
-<p>For output, this option specified the maximum number of packets that may be
+<dt><samp class="option">-thread_queue_size <var class="var">size</var> (<em class="emph">output</em>)</samp></dt>
+<dd><p>This option specifies the maximum number of packets per stream that may be
 queued to each muxing thread.
 </p>
 </dd>

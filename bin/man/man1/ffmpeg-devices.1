@@ -139,9 +139,11 @@ For more information see:
 .IP \fBsample_rate\fR 4
 .IX Item "sample_rate"
 Set the sample rate in Hz. Default is 48000.
-.IP \fBchannels\fR 4
-.IX Item "channels"
-Set the number of channels. Default is 2.
+.IP \fBch_layout\fR 4
+.IX Item "ch_layout"
+Set the channel layout. When unset, the layout defaults to stereo, or to the
+minimum channel count supported by the device, and is filled in from the ALSA
+channel map on a best-effort basis.
 .SS android_camera
 .IX Subsection "android_camera"
 Android camera input device.
@@ -227,14 +229,26 @@ This is equivalent to specifying an empty device name or index.
 AVFoundation supports the following options:
 .IP "\fB\-list_devices <TRUE|FALSE>\fR" 4
 .IX Item "-list_devices <TRUE|FALSE>"
-If set to true, a list of all available input devices is given showing all
-device names and indices.
+If set to true, a list of all available input devices is given showing their
+index, name, unique ID, and USB serial number (when available).
 .IP "\fB\-video_device_index <INDEX>\fR" 4
 .IX Item "-video_device_index <INDEX>"
 Specify the video device by its index. Overrides anything given in the input filename.
 .IP "\fB\-audio_device_index <INDEX>\fR" 4
 .IX Item "-audio_device_index <INDEX>"
 Specify the audio device by its index. Overrides anything given in the input filename.
+.IP "\fB\-video_device_id <ID>\fR" 4
+.IX Item "-video_device_id <ID>"
+Specify the video device by a prefixed identifier, as shown by
+\&\fB\-list_devices\fR: \f(CW\*(C`uid:<UID>\*(C'\fR selects by AVFoundation unique ID,
+\&\f(CW\*(C`serial:<SERIAL>\*(C'\fR by USB serial number. The unique ID of a UVC device
+may not be stable across reboots. Only UVC devices expose a serial number.
+Overrides anything given in the input filename.
+.IP "\fB\-audio_device_id <ID>\fR" 4
+.IX Item "-audio_device_id <ID>"
+Specify the audio device by a prefixed identifier. See
+\&\fB\-video_device_id\fR; for audio, the serial is only available for
+class-compliant USB devices.
 .IP "\fB\-pixel_format <FORMAT>\fR" 4
 .IX Item "-pixel_format <FORMAT>"
 Request the video device to use a specific pixel format.
@@ -299,8 +313,9 @@ The decklink input device provides capture capabilities for Blackmagic
 DeckLink devices.
 .PP
 To enable this input device, you need the Blackmagic DeckLink SDK and you
-need to configure with the appropriate \f(CW\*(C`\-\-extra\-cflags\*(C'\fR
-and \f(CW\*(C`\-\-extra\-ldflags\*(C'\fR.
+need to configure with the appropriate \f(CW\*(C`\-\-extra\-cflags\*(C'\fR,
+\&\f(CW\*(C`\-\-extra\-cxxflags\*(C'\fR and \f(CW\*(C`\-\-extra\-ldflags\*(C'\fR. The SDK include directory
+must be available to both the C and C++ compilers.
 On Windows, you need to run the IDL files through \fBwidl\fR.
 .PP
 DeckLink is very picky about the formats it supports. Pixel format of the
@@ -1806,8 +1821,9 @@ The decklink output device provides playback capabilities for Blackmagic
 DeckLink devices.
 .PP
 To enable this output device, you need the Blackmagic DeckLink SDK and you
-need to configure with the appropriate \f(CW\*(C`\-\-extra\-cflags\*(C'\fR
-and \f(CW\*(C`\-\-extra\-ldflags\*(C'\fR.
+need to configure with the appropriate \f(CW\*(C`\-\-extra\-cflags\*(C'\fR,
+\&\f(CW\*(C`\-\-extra\-cxxflags\*(C'\fR and \f(CW\*(C`\-\-extra\-ldflags\*(C'\fR. The SDK include directory
+must be available to both the C and C++ compilers.
 On Windows, you need to run the IDL files through \fBwidl\fR.
 .PP
 DeckLink is very picky about the formats it supports. Pixel format is always

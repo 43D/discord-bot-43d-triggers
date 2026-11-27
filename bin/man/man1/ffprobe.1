@@ -783,6 +783,13 @@ sections:
 .Vb 1
 \&        stream_tags=title
 .Ve
+.Sp
+Selecting \f(CW\*(C`stream\*(C'\fR or \f(CW\*(C`streams\*(C'\fR does not by itself enable program or
+stream group output. To also show streams within programs or groups, use
+\&\f(CW\*(C`\-show_programs\*(C'\fR, \f(CW\*(C`\-show_stream_groups\*(C'\fR, or select their unique
+section name, for example \f(CW\*(C`\-show_entries program_stream=index\*(C'\fR or
+\&\f(CW\*(C`\-show_entries stream_group_stream=index\*(C'\fR. The shared names still select
+fields within programs and stream groups when their output is enabled.
 .IP \fB\-show_packets\fR 4
 .IX Item "-show_packets"
 Show information about each packet contained in the input multimedia
