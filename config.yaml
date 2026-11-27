@@ -1,7 +1,7 @@
 name: 43D Dicord Bot Trigger
 slug: bot.discord-43d.dev
 description: A Discord bot that triggers a sound when a specific message is received.
-version: 1.0.5
+version: 1.0.6
 startup: application
 boot: auto
 init: false
